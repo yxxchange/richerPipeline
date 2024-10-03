@@ -28,4 +28,4 @@ go.work.sum
 /.idea/vcs.xml
 
 # config file
-config.*
+config.yml
