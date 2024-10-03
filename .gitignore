@@ -26,3 +26,6 @@ go.work.sum
 /.idea/modules.xml
 /.idea/richerPipeline.iml
 /.idea/vcs.xml
+
+# config file
+config.*

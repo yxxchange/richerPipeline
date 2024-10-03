@@ -1,0 +1,17 @@
+appVersion: v1.0.0
+metadata:
+  name: "richerPipeline"
+  description: "自由编排的任务调度流水线"
+  mode: "dev"
+http:
+  port: 8080
+  validate: true
+  token: "***********************"
+database:
+  mysql:
+    pipeline:
+      host: localhost
+      port: 3306
+      user: root
+      password: 123456
+
