@@ -17,8 +17,8 @@ graph:
         schedulerPolicy: "nonblock" # 调度策略
       status:
         state: "pending"    # 状态
-        startTime: ""       # 开始时间
-        endTime: ""         # 结束时间
+        startTime: 0       # 开始时间
+        endTime: 0         # 结束时间
         duration: 0         # 持续时间（秒）
         errMsg: ""          # 错误信息
         data: ""            # 输出数据
@@ -35,8 +35,8 @@ graph:
         schedulerPolicy: "block"
       status:
         state: "pending"
-        startTime: ""
-        endTime: ""
+        startTime: 0
+        endTime: 0
         duration: 0
         errMsg: ""
         data: ""
@@ -53,8 +53,8 @@ graph:
         schedulerPolicy: "block"
       status:
         state: "pending"
-        startTime: ""
-        endTime: ""
+        startTime: 0
+        endTime: 0
         duration: 0
         errMsg: ""
         data: ""
@@ -71,8 +71,8 @@ graph:
         schedulerPolicy: "nonblock"
       status:
         state: "pending"
-        startTime: ""
-        endTime: ""
+        startTime: 0
+        endTime: 0
         duration: 0
         errMsg: ""
         data: ""
@@ -89,8 +89,8 @@ graph:
         schedulerPolicy: "nonblock"
       status:
         state: "pending"
-        startTime: ""
-        endTime: ""
+        startTime: 0
+        endTime: 0
         duration: 0
         errMsg: ""
         data: ""

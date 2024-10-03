@@ -35,6 +35,7 @@ func (p *GeneralParser) Parse() (*WorkGraph, error) {
 	return &WorkGraph{
 		Metadata: pipe.Metadata,
 		DAGraph:  graph,
+		RawData:  pipe,
 	}, nil
 }
 

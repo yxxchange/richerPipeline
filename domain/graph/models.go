@@ -65,6 +65,7 @@ type WorkNode struct {
 type WorkGraph struct {
 	Metadata Metadata
 	DAGraph  WorkDAGraph
+	RawData  RawPipeline
 }
 
 type WorkDAGraph struct {

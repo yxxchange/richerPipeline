@@ -3,6 +3,8 @@ package graph
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"io"
+	"os"
 	"testing"
 )
 
@@ -278,4 +280,22 @@ func TestGenDAGraph_InvalidSourceNode(t *testing.T) {
 	fmt.Printf("slice: %v\n", graph.OutputTopologicalSlice())
 	assert.Error(t, err)
 	assert.Equal(t, WorkDAGraph{}, graph)
+}
+
+func TestGeneralParser_Parse(t *testing.T) {
+	filePath := "../../example.yml"
+	r, err := os.Open(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser := NewGeneralParser(b)
+	graph, err := parser.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("graph: %v\n", graph)
 }
