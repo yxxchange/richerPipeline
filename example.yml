@@ -1,0 +1,109 @@
+pipelineVersion: "1.0"
+metadata:
+  name: "example-dag"
+  namespace: "default"
+
+graph:
+  nodes:
+    - name: "node1"   # 第一个节点
+      ctx:
+        input:
+          worker: "worker1"      # 指定worker
+          jsonParam: '{"param1": "value1"}'   # JSON参数
+      config:
+        retry: 3            # 重试次数
+        timeout: 300        # 超时时间（秒）
+        timeoutPolicy: "terminate"  # 超时策略
+        schedulerPolicy: "nonblock" # 调度策略
+      status:
+        state: "pending"    # 状态
+        startTime: ""       # 开始时间
+        endTime: ""         # 结束时间
+        duration: 0         # 持续时间（秒）
+        errMsg: ""          # 错误信息
+        data: ""            # 输出数据
+
+    - name: "node2"   # 第二个节点
+      ctx:
+        input:
+          worker: "worker2"
+          jsonParam: '{"param2": "value2"}'
+      config:
+        retry: 2
+        timeout: 200
+        timeoutPolicy: "ignore"
+        schedulerPolicy: "block"
+      status:
+        state: "pending"
+        startTime: ""
+        endTime: ""
+        duration: 0
+        errMsg: ""
+        data: ""
+
+    - name: "node3"   # 第三个节点
+      ctx:
+        input:
+          worker: "worker3"
+          jsonParam: '{"param3": "value3"}'
+      config:
+        retry: 1
+        timeout: 150
+        timeoutPolicy: "retry"
+        schedulerPolicy: "block"
+      status:
+        state: "pending"
+        startTime: ""
+        endTime: ""
+        duration: 0
+        errMsg: ""
+        data: ""
+
+    - name: "node4"   # 第四个节点
+      ctx:
+        input:
+          worker: "worker4"
+          jsonParam: '{"param4": "value4"}'
+      config:
+        retry: 0
+        timeout: 90
+        timeoutPolicy: "terminate"
+        schedulerPolicy: "nonblock"
+      status:
+        state: "pending"
+        startTime: ""
+        endTime: ""
+        duration: 0
+        errMsg: ""
+        data: ""
+
+    - name: "node5"   # 第五个节点
+      ctx:
+        input:
+          worker: "worker5"
+          jsonParam: '{"param5": "value5"}'
+      config:
+        retry: 0
+        timeout: 60
+        timeoutPolicy: "terminate"
+        schedulerPolicy: "nonblock"
+      status:
+        state: "pending"
+        startTime: ""
+        endTime: ""
+        duration: 0
+        errMsg: ""
+        data: ""
+
+  edges:
+    - source: "node1"
+      target: "node2"
+
+    - source: "node1"
+      target: "node3"
+
+    - source: "node2"
+      target: "node5"
+
+    - source: "node3"
+      target: "node5"
