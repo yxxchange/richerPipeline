@@ -24,15 +24,22 @@ func TopologicalSort(sorter ITopologicalSorter) (ITopologicalSorter, error) {
 		return nil, ErrTypeNotDAG
 	}
 	for !stack.IsEmpty() {
-		top := stack.Pop()
-		res = append(res, top)
-		for _, childIndex := range sorter.Children(top) {
-			if err := sorter.InDegreeSubOne(childIndex); err != nil {
-				return nil, err
+		size := stack.Size()
+		tmp := make([]interface{}, 0)
+		for i := 0; i < size; i++ {
+			top := stack.Pop()
+			res = append(res, top)
+			for _, childIndex := range sorter.Children(top) {
+				if err := sorter.InDegreeSubOne(childIndex); err != nil {
+					return nil, err
+				}
+				if sorter.InDegreeIsZero(childIndex) {
+					tmp = append(tmp, childIndex)
+				}
 			}
-			if sorter.InDegreeIsZero(childIndex) {
-				stack.Push(childIndex)
-			}
+		}
+		for _, idx := range tmp {
+			stack.Push(idx)
 		}
 	}
 	if len(res) != sorter.Count() {

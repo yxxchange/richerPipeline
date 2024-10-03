@@ -125,3 +125,11 @@ func (w *WorkDAGraph) Index() []interface{} {
 	}
 	return res
 }
+
+func (w *WorkDAGraph) OutputTopologicalSlice() []string {
+	res := make([]string, 0)
+	for _, node := range w.topologicalSlice {
+		res = append(res, node.Self.Name)
+	}
+	return res
+}

@@ -61,6 +61,10 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 			err = fmt.Errorf("GenDAGraph panic: %v", err)
 		}
 	}()
+	err = validate(nodeMap, edgeMap)
+	if err != nil {
+		return WorkDAGraph{}, err
+	}
 	resMap := make(map[string]*WorkNode)
 	for _, node := range nodeMap {
 		newNode := &WorkNode{
@@ -94,4 +98,21 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 	tmp = sorted.(*WorkDAGraph)
 	res = *tmp
 	return
+}
+
+func validate(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) error {
+	if len(nodeMap) == 0 {
+		return fmt.Errorf("empty node map")
+	}
+	for source, targets := range edgeMap {
+		if _, ok := nodeMap[source]; !ok {
+			return fmt.Errorf("source node %s not found", source)
+		}
+		for _, target := range targets {
+			if _, ok := nodeMap[target]; !ok {
+				return fmt.Errorf("target node %s not found", target)
+			}
+		}
+	}
+	return nil
 }

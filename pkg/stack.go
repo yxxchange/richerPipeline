@@ -27,3 +27,7 @@ func (s *Stack) Peek() interface{} {
 func (s *Stack) IsEmpty() bool {
 	return len(s.items) == 0
 }
+
+func (s *Stack) Size() int {
+	return len(s.items)
+}
