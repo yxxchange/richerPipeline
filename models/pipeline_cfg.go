@@ -3,7 +3,7 @@ package models
 type PipelineType string
 
 const (
-	GeneralPipeline PipelineType = "general"
+	DefaultPipeline PipelineType = "default"
 	CICDPipeline    PipelineType = "ci_cd"
 )
 

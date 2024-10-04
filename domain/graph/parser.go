@@ -3,67 +3,71 @@ package graph
 import (
 	"fmt"
 	"github.com/yxxchange/richerLog/log"
-	"gopkg.in/yaml.v3"
+	"richerPipeline/models"
 	"richerPipeline/pkg"
 )
 
 type IParser interface {
-	Parse() (graph *WorkGraph, err error)
+	Parse(raw models.RawPipeline) (graph WorkGraph, err error)
+	Validate(raw models.RawPipeline) error
 }
 
-func NewGeneralParser(yamlBytes []byte) IParser {
-	return &GeneralParser{yamlBytes: yamlBytes}
+func NewParser(version string, pipeType models.PipelineType) (IParser, error) {
+	switch version {
+	case pkg.VersionV1:
+		return newV1Parser(pipeType)
+	default:
+		return nil, pkg.ErrPipelineVersion
+	}
+}
+
+func newV1Parser(pipeType models.PipelineType) (IParser, error) {
+	switch pipeType {
+	case models.DefaultPipeline:
+		return &GeneralParser{}, nil
+	default:
+		return nil, pkg.ErrPipelineType
+	}
 }
 
 type GeneralParser struct {
-	yamlBytes []byte
 }
 
-func (p *GeneralParser) Validate(yamlBytes []byte) error {
-	var pipe RawPipeline
-	err := yaml.Unmarshal(yamlBytes, &pipe)
-	if err != nil {
-		return err
-	}
-	nodeMap := extractNode(pipe)
-	edgeMap := extractEdge(pipe)
-	_, err = GenDAGraph(nodeMap, edgeMap)
+func (p *GeneralParser) Validate(raw models.RawPipeline) error {
+	nodeMap := extractNode(raw)
+	edgeMap := extractEdge(raw)
+	_, err := GenDAGraph(nodeMap, edgeMap)
 	if err != nil {
 		log.Errorf("生成DAG图失败: %v", err)
-		return err
+		return pkg.ErrDataNotDAG
 	}
 	return nil
 }
 
-func (p *GeneralParser) Parse() (*WorkGraph, error) {
-	var pipe RawPipeline
-	err := yaml.Unmarshal(p.yamlBytes, &pipe)
-	if err != nil {
-		return nil, err
-	}
-	nodeMap := extractNode(pipe)
-	edgeMap := extractEdge(pipe)
+func (p *GeneralParser) Parse(raw models.RawPipeline) (WorkGraph, error) {
+	nodeMap := extractNode(raw)
+	edgeMap := extractEdge(raw)
 	graph, err := GenDAGraph(nodeMap, edgeMap)
 	if err != nil {
 		log.Errorf("生成DAG图失败: %v", err)
-		return nil, err
+		return WorkGraph{}, err
 	}
-	return &WorkGraph{
-		Metadata: pipe.Metadata,
+	return WorkGraph{
+		Metadata: raw.Metadata,
 		DAGraph:  graph,
-		RawData:  pipe,
+		RawData:  raw,
 	}, nil
 }
 
-func extractNode(pipeline RawPipeline) map[string]*NodeInfo {
-	nodeMap := make(map[string]*NodeInfo)
+func extractNode(pipeline models.RawPipeline) map[string]*models.NodeInfo {
+	nodeMap := make(map[string]*models.NodeInfo)
 	for _, node := range pipeline.Graph.Nodes {
 		nodeMap[node.Name] = &node
 	}
 	return nodeMap
 }
 
-func extractEdge(pipeline RawPipeline) map[string][]string {
+func extractEdge(pipeline models.RawPipeline) map[string][]string {
 	edgeMap := make(map[string][]string)
 	for _, edge := range pipeline.Graph.Edges {
 		edgeMap[edge.Source] = append(edgeMap[edge.Source], edge.Target)
@@ -71,7 +75,7 @@ func extractEdge(pipeline RawPipeline) map[string][]string {
 	return edgeMap
 }
 
-func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res WorkDAGraph, err error) {
+func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) (res WorkDAGraph, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Infof("GenDAGraph panic: %v", err)
@@ -87,7 +91,7 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 		newNode := &WorkNode{
 			WorkerEngine: node.Ctx.Input.Worker,
 			Self:         node,
-			Child:        make([]*NodeInfo, 0),
+			Child:        make([]*models.NodeInfo, 0),
 		}
 		if _, ok := resMap[node.Name]; ok {
 			newNode = resMap[node.Name]
@@ -97,7 +101,7 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 				resMap[target] = &WorkNode{
 					WorkerEngine: node.Ctx.Input.Worker,
 					Self:         nodeMap[target],
-					Child:        make([]*NodeInfo, 0),
+					Child:        make([]*models.NodeInfo, 0),
 				}
 			}
 			newNode.Child = append(newNode.Child, nodeMap[target])
@@ -117,7 +121,7 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 	return
 }
 
-func validate(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) error {
+func validate(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) error {
 	if len(nodeMap) == 0 {
 		return fmt.Errorf("empty node map")
 	}

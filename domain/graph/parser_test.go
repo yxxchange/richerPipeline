@@ -3,13 +3,15 @@ package graph
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 	"io"
 	"os"
+	"richerPipeline/models"
 	"testing"
 )
 
 func TestGenDAGraph_ValidInput(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -28,7 +30,7 @@ func TestGenDAGraph_ValidInput(t *testing.T) {
 }
 
 func TestGenDAGraph_EmptyInput(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{}
+	nodeMap := map[string]*models.NodeInfo{}
 	edgeMap := map[string][]string{}
 
 	graph, err := GenDAGraph(nodeMap, edgeMap)
@@ -45,7 +47,7 @@ func TestGenDAGraph_NilInput(t *testing.T) {
 }
 
 func TestGenDAGraph_InvalidEdge(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 	}
@@ -61,7 +63,7 @@ func TestGenDAGraph_InvalidEdge(t *testing.T) {
 }
 
 func TestGenDAGraph_MultipleEdges(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -83,7 +85,7 @@ func TestGenDAGraph_MultipleEdges(t *testing.T) {
 }
 
 func TestGenDAGraph_SingleNode(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 	}
 
@@ -97,7 +99,7 @@ func TestGenDAGraph_SingleNode(t *testing.T) {
 }
 
 func TestGenDAGraph_CircularDependency(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 	}
@@ -114,7 +116,7 @@ func TestGenDAGraph_CircularDependency(t *testing.T) {
 }
 
 func TestGenDAGraph_ComplexGraph(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -143,7 +145,7 @@ func TestGenDAGraph_ComplexGraph(t *testing.T) {
 }
 
 func TestGenDAGraph_LargeGraphWithHighInDegree(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1":  {Name: "node1"},
 		"node2":  {Name: "node2"},
 		"node3":  {Name: "node3"},
@@ -185,7 +187,7 @@ func TestGenDAGraph_LargeGraphWithHighInDegree(t *testing.T) {
 }
 
 func TestGenDAGraph_OrphanNode(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -208,7 +210,7 @@ func TestGenDAGraph_OrphanNode(t *testing.T) {
 }
 
 func TestGenDAGraph_MultipleStartNodes(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -233,7 +235,7 @@ func TestGenDAGraph_MultipleStartNodes(t *testing.T) {
 }
 
 func TestGenDAGraph_EmptyEdgeMap(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 		"node3": {Name: "node3"},
@@ -250,7 +252,7 @@ func TestGenDAGraph_EmptyEdgeMap(t *testing.T) {
 }
 
 func TestGenDAGraph_InvalidTargetNode(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 	}
@@ -266,7 +268,7 @@ func TestGenDAGraph_InvalidTargetNode(t *testing.T) {
 }
 
 func TestGenDAGraph_InvalidSourceNode(t *testing.T) {
-	nodeMap := map[string]*NodeInfo{
+	nodeMap := map[string]*models.NodeInfo{
 		"node1": {Name: "node1"},
 		"node2": {Name: "node2"},
 	}
@@ -292,8 +294,16 @@ func TestGeneralParser_Parse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parser := NewGeneralParser(b)
-	graph, err := parser.Parse()
+	var raw models.RawPipeline
+	err = yaml.Unmarshal(b, &raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser, err := NewParser(raw.PipelineVersion, models.PipelineType(raw.Metadata.Namespace))
+	graph, err := parser.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

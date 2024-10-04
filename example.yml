@@ -1,4 +1,4 @@
-pipelineVersion: "1.0"
+pipelineVersion: "v1"
 metadata:
   name: "example-dag"
   namespace: "default"

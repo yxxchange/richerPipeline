@@ -2,6 +2,7 @@ package pipeline_cfg
 
 import (
 	"github.com/yxxchange/richerLog/log"
+	"richerPipeline/domain/graph"
 	infra "richerPipeline/infrastructure"
 	"richerPipeline/models"
 	"richerPipeline/pkg"
@@ -14,6 +15,20 @@ func NewPipeCfgHandler() PipelineCfgHandler {
 }
 
 func (h PipelineCfgHandler) CreatePipelineCfg(raw models.RawPipeline) error {
+	parser, err := graph.NewParser(raw.PipelineVersion, models.PipelineType(raw.Metadata.Namespace))
+	if err != nil {
+		log.Errorf("pipeline解析器初始化失败: %v", err)
+		return err
+	}
+	err = parser.Validate(raw)
+	if err != nil {
+		log.Errorf("pipeline数据校验失败: %v", err)
+		return err
+	}
+	return h.createPipelineCfg(raw)
+}
+
+func (h PipelineCfgHandler) createPipelineCfg(raw models.RawPipeline) error {
 	cfg, err := models.RawPipeline2PipelineCfg(raw)
 	if err != nil {
 		log.Errorf("数据模型转换失败: %v", err)

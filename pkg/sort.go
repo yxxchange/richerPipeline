@@ -21,7 +21,7 @@ func TopologicalSort(sorter ITopologicalSorter) (ITopologicalSorter, error) {
 		}
 	}
 	if stack.IsEmpty() {
-		return nil, ErrTypeNotDAG
+		return nil, ErrDataNotDAG
 	}
 	for !stack.IsEmpty() {
 		size := stack.Size()
@@ -43,7 +43,7 @@ func TopologicalSort(sorter ITopologicalSorter) (ITopologicalSorter, error) {
 		}
 	}
 	if len(res) != sorter.Count() {
-		return nil, ErrTypeNotDAG
+		return nil, ErrDataNotDAG
 	}
 	for _, idx := range res {
 		sorter.AddElement(idx)
