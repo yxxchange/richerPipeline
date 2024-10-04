@@ -1,6 +1,9 @@
 package database
 
-import "richerPipeline/models"
+import (
+	"fmt"
+	"richerPipeline/models"
+)
 
 type pipelineCfgRepo struct {
 }
@@ -24,9 +27,19 @@ func (p *pipelineCfgRepo) CreatePipeCfg(cfg *models.PipelineCfg) (int, error) {
 	return int(cfg.Id), err
 }
 
-func (p *pipelineCfgRepo) UpdatePipeCfg(cfg *models.PipelineCfg) error {
+func (p *pipelineCfgRepo) FullUpdatePipeCfg(cfg *models.PipelineCfg) error {
+	if cfg.Id <= 0 {
+		return fmt.Errorf("id is required and valid")
+	}
 	db := pipelineDB.Table(models.PipelineCfg{}.TableName())
-	return db.Model(cfg).Updates(cfg).Error
+	result := db.Model(cfg).Where("id = ?", cfg.Id).Updates(cfg)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no record updated")
+	}
+	return nil
 }
 
 func (p *pipelineCfgRepo) DeletePipeCfg(id int64) error {

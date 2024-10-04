@@ -10,7 +10,7 @@ const (
 type IPipeCfg interface {
 	GetPipeCfg(id int64) (PipelineCfg, error)
 	CreatePipeCfg(cfg *PipelineCfg) (int, error)
-	UpdatePipeCfg(cfg *PipelineCfg) error
+	FullUpdatePipeCfg(cfg *PipelineCfg) error
 	DeletePipeCfg(id int64) error
 }
 
