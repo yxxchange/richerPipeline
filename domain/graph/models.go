@@ -1,73 +1,26 @@
 package graph
 
-import "richerPipeline/pkg"
+import (
+	"richerPipeline/models"
+	"richerPipeline/pkg"
+)
 
-type RawPipeline struct {
-	PipelineVersion string   `yaml:"pipelineVersion"`
-	Metadata        Metadata `yaml:"metadata"`
-	Graph           RawGraph `yaml:"graph"`
-}
-
-type Metadata struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-}
-
-type RawGraph struct {
-	Nodes []NodeInfo `yaml:"nodes"`
-	Edges []EdgeInfo `yaml:"edges"`
-}
-
-type NodeInfo struct {
-	Name   string  `yaml:"name"`
-	Ctx    Context `yaml:"ctx"`
-	Config Config  `yaml:"config"`
-	Status Status  `yaml:"status"`
-}
-
-type Context struct {
-	Input Input `yaml:"input"`
-}
-
-type Input struct {
-	Worker    string `yaml:"worker"`
-	JsonParam string `yaml:"jsonParam"`
-}
-
-type Config struct {
-	Retry           int    `yaml:"retry"`
-	Timeout         int    `yaml:"timeout"`
-	TimeoutPolicy   string `yaml:"timeoutPolicy"`
-	SchedulerPolicy string `yaml:"schedulerPolicy"`
-}
-
-type Status struct {
-	State     string `yaml:"state"`
-	StartTime uint64 `yaml:"startTime"`
-	EndTime   uint64 `yaml:"endTime"`
-	Duration  uint64 `yaml:"duration"`
-	ErrMsg    string `yaml:"errMsg"`
-	Data      string `yaml:"data"`
-}
-
-type EdgeInfo struct {
-	Source string `yaml:"source"`
-	Target string `yaml:"target"`
-}
-
+// WorkNode 用户侧的PipelineCfg，每一个工作节点对应一个工作节点
 type WorkNode struct {
 	WorkerEngine string
-	Self         *NodeInfo
-	Child        []*NodeInfo
+	Self         *models.NodeInfo
+	Child        []*models.NodeInfo
 	extendInfo   ExtendNodeInfo
 }
 
+// WorkGraph 图结构，包含了元数据、DAG图、原始数据
 type WorkGraph struct {
-	Metadata Metadata
+	Metadata models.Metadata
 	DAGraph  WorkDAGraph
-	RawData  RawPipeline
+	RawData  models.RawPipeline
 }
 
+// WorkDAGraph 用于拓扑排序的图结构,同时保留了节点的业务信息
 type WorkDAGraph struct {
 	Map              map[string]*WorkNode
 	topologicalSlice []*WorkNode // 用于存储拓扑排序的结果

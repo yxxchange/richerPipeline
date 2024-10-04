@@ -1,7 +1,13 @@
 package pipeline_cfg
 
-type PipeCfgHandler struct{}
+import "richerPipeline/models"
 
-func NewPipeCfgHandler() PipeCfgHandler {
-	return PipeCfgHandler{}
+type PipelineCfgHandler struct{}
+
+func NewPipeCfgHandler() PipelineCfgHandler {
+	return PipelineCfgHandler{}
+}
+
+func CreatePipelineCfg(raw models.RawPipeline) (err error) {
+	return
 }
