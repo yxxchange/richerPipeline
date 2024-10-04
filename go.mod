@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
-	github.com/yxxchange/richerLog v1.0.0
+	github.com/yxxchange/richerLog v1.0.1
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
