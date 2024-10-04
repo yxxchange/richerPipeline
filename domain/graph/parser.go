@@ -19,6 +19,22 @@ type GeneralParser struct {
 	yamlBytes []byte
 }
 
+func (p *GeneralParser) Validate(yamlBytes []byte) error {
+	var pipe RawPipeline
+	err := yaml.Unmarshal(yamlBytes, &pipe)
+	if err != nil {
+		return err
+	}
+	nodeMap := extractNode(pipe)
+	edgeMap := extractEdge(pipe)
+	_, err = GenDAGraph(nodeMap, edgeMap)
+	if err != nil {
+		log.Errorf("生成DAG图失败: %v", err)
+		return err
+	}
+	return nil
+}
+
 func (p *GeneralParser) Parse() (*WorkGraph, error) {
 	var pipe RawPipeline
 	err := yaml.Unmarshal(p.yamlBytes, &pipe)
