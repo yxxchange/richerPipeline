@@ -5,6 +5,10 @@ import "richerPipeline/models"
 type pipelineCfgRepo struct {
 }
 
+func NewPipeCfgRepo() models.IPipeCfg {
+	return &pipelineCfgRepo{}
+}
+
 var _ models.IPipeCfg = &pipelineCfgRepo{}
 
 func (p *pipelineCfgRepo) GetPipeCfg(id int64) (models.PipelineCfg, error) {

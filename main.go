@@ -5,7 +5,7 @@ import (
 	"github.com/yxxchange/richerLog/log"
 	"os"
 	"richerPipeline/config"
-	db "richerPipeline/infrastructure/database"
+	"richerPipeline/infrastructure"
 )
 
 var (
@@ -13,6 +13,7 @@ var (
 )
 
 func main() {
+	// step 1: init config
 	flags := flag.NewFlagSet("richerPipeline", flag.ExitOnError)
 	flags.StringVar(&configPath, "config", "./config.yml", "config file path")
 	err := flags.Parse(os.Args[1:])
@@ -20,7 +21,15 @@ func main() {
 		panic(err)
 	}
 	config.WithPath(configPath).Init()
+
+	// step 2: init log
 	log.UseDefault()
-	db.Init()
-	log.Infof("richerPipeline start")
+	log.Infof("log init")
+
+	// step 3: init infrastructure
+	infrastructure.Init()
+	log.Infof("infrastructure init")
+
+	// step 4: init domain
+	// domain.Init()
 }
