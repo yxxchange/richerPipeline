@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"errors"
+	"fmt"
 )
 
 var (
@@ -13,6 +14,13 @@ var (
 	ErrPipelineVersion  = errors.New("unsupported pipeline version")
 	ErrPipelineType     = errors.New("unsupported pipeline type")
 )
+
+func WrapError(errGroup error, errDetail error) error {
+	if errGroup == nil {
+		return errDetail
+	}
+	return fmt.Errorf("%w: %v", errGroup, errDetail)
+}
 
 type ErrCode int
 

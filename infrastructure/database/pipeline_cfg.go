@@ -8,26 +8,26 @@ import (
 type pipelineCfgRepo struct {
 }
 
-func NewPipeCfgRepo() models.IPipeCfg {
+func NewPipeCfgRepo() models.IPipelineCfg {
 	return &pipelineCfgRepo{}
 }
 
-var _ models.IPipeCfg = &pipelineCfgRepo{}
+var _ models.IPipelineCfg = &pipelineCfgRepo{}
 
-func (p *pipelineCfgRepo) GetPipeCfg(id int64) (models.PipelineCfg, error) {
+func (p *pipelineCfgRepo) GetPipelineCfg(id int64) (models.PipelineCfg, error) {
 	db := pipelineDB.Table(models.PipelineCfg{}.TableName())
 	var cfg models.PipelineCfg
 	err := db.Where("id = ?", id).First(&cfg).Error
 	return cfg, err
 }
 
-func (p *pipelineCfgRepo) CreatePipeCfg(cfg *models.PipelineCfg) (int, error) {
+func (p *pipelineCfgRepo) CreatePipelineCfg(cfg *models.PipelineCfg) (int, error) {
 	db := pipelineDB.Table(models.PipelineCfg{}.TableName())
 	err := db.Create(cfg).Error
 	return int(cfg.Id), err
 }
 
-func (p *pipelineCfgRepo) FullUpdatePipeCfg(cfg *models.PipelineCfg) error {
+func (p *pipelineCfgRepo) FullUpdatePipelineCfg(cfg *models.PipelineCfg) error {
 	if cfg.Id <= 0 {
 		return fmt.Errorf("id is required and valid")
 	}
@@ -42,7 +42,7 @@ func (p *pipelineCfgRepo) FullUpdatePipeCfg(cfg *models.PipelineCfg) error {
 	return nil
 }
 
-func (p *pipelineCfgRepo) DeletePipeCfg(id int64) error {
+func (p *pipelineCfgRepo) DeletePipelineCfg(id int64) error {
 	db := pipelineDB.Table(models.PipelineCfg{}.TableName())
 	return db.Where("id = ?", id).Delete(models.PipelineCfg{}).Error
 }

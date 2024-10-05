@@ -1,5 +1,7 @@
 package pkg
 
+import "fmt"
+
 type ITopologicalSorter interface {
 	Index() []interface{}
 	Count() int
@@ -21,7 +23,7 @@ func TopologicalSort(sorter ITopologicalSorter) (ITopologicalSorter, error) {
 		}
 	}
 	if stack.IsEmpty() {
-		return nil, ErrDataNotDAG
+		return nil, fmt.Errorf("no node with in-degree 0")
 	}
 	for !stack.IsEmpty() {
 		size := stack.Size()
@@ -43,7 +45,7 @@ func TopologicalSort(sorter ITopologicalSorter) (ITopologicalSorter, error) {
 		}
 	}
 	if len(res) != sorter.Count() {
-		return nil, ErrDataNotDAG
+		return nil, fmt.Errorf("graph has cycle")
 	}
 	for _, idx := range res {
 		sorter.AddElement(idx)
