@@ -5,7 +5,8 @@ import (
 	"richerPipeline/models"
 )
 
-var PipelineCfgRepo models.IPipeCfg
+var PipelineCfgRepo models.IPipelineCfg
+var PipelineExecRepo models.IPipelineExec
 
 func Init() {
 	dbInterfaceInit()
@@ -14,4 +15,5 @@ func Init() {
 func dbInterfaceInit() {
 	database.Init()
 	PipelineCfgRepo = database.NewPipeCfgRepo()
+	PipelineExecRepo = database.NewPipeExecRepo()
 }

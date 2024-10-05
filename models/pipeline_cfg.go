@@ -7,11 +7,11 @@ const (
 	CICDPipeline    PipelineType = "ci_cd"
 )
 
-type IPipeCfg interface {
-	GetPipeCfg(id int64) (PipelineCfg, error)
-	CreatePipeCfg(cfg *PipelineCfg) (int, error)
-	FullUpdatePipeCfg(cfg *PipelineCfg) error
-	DeletePipeCfg(id int64) error
+type IPipelineCfg interface {
+	GetPipelineCfg(id int64) (PipelineCfg, error)
+	CreatePipelineCfg(cfg *PipelineCfg) (int, error)
+	FullUpdatePipelineCfg(cfg *PipelineCfg) error
+	DeletePipelineCfg(id int64) error
 }
 
 type PipelineCfg struct {

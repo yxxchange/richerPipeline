@@ -17,7 +17,7 @@ func NewParser(version string, pipeType models.PipelineType) (IParser, error) {
 	case pkg.VersionV1:
 		return newV1Parser(pipeType)
 	default:
-		return nil, pkg.ErrPipelineVersion
+		return nil, pkg.WrapError(pkg.ErrPipelineVersion, fmt.Errorf("unsupported version: %s", version))
 	}
 }
 
@@ -26,7 +26,7 @@ func newV1Parser(pipeType models.PipelineType) (IParser, error) {
 	case models.DefaultPipeline:
 		return &GeneralParser{}, nil
 	default:
-		return nil, pkg.ErrPipelineType
+		return nil, pkg.WrapError(pkg.ErrPipelineType, fmt.Errorf("unsupported pipeline type: %s", pipeType))
 	}
 }
 
@@ -39,7 +39,7 @@ func (p *GeneralParser) Validate(raw models.RawPipeline) error {
 	_, err := GenDAGraph(nodeMap, edgeMap)
 	if err != nil {
 		log.Errorf("生成DAG图失败: %v", err)
-		return pkg.ErrDataNotDAG
+		return pkg.WrapError(pkg.ErrDataNotDAG, err)
 	}
 	return nil
 }
@@ -114,7 +114,7 @@ func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string
 	tmp = tmp.GenExtendInfo()
 	sorted, err := pkg.TopologicalSort(tmp)
 	if err != nil {
-		return WorkDAGraph{}, err
+		return WorkDAGraph{}, pkg.WrapError(pkg.ErrDataNotDAG, err)
 	}
 	tmp = sorted.(*WorkDAGraph)
 	res = *tmp

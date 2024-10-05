@@ -15,3 +15,9 @@ func RawPipeline2PipelineCfg(raw RawPipeline) (cfg PipelineCfg, err error) {
 	cfg.CfgYaml = string(b)
 	return
 }
+
+func PipelineCfg2Exec(cfg PipelineCfg) (exec PipelineExec, err error) {
+	exec.PipelineCfgId = cfg.Id
+	exec.ExecSnapshot = cfg.CfgYaml
+	return
+}
