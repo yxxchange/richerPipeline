@@ -1,4 +1,4 @@
-module richerPipeline
+module github.com/yxxchange/richerPipeline
 
 go 1.22
 

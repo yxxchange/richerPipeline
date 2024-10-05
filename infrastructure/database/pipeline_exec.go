@@ -2,7 +2,7 @@ package database
 
 import (
 	"fmt"
-	"richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/models"
 )
 
 type pipelineExecRepo struct{}

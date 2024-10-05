@@ -2,9 +2,9 @@ package pipeline_exec
 
 import (
 	"github.com/yxxchange/richerLog/log"
-	infra "richerPipeline/infrastructure"
-	"richerPipeline/models"
-	"richerPipeline/pkg"
+	infra "github.com/yxxchange/richerPipeline/infrastructure"
+	"github.com/yxxchange/richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/pkg"
 )
 
 type PipelineExecHandler struct{}

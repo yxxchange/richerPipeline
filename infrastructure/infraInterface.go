@@ -1,8 +1,8 @@
 package infrastructure
 
 import (
-	"richerPipeline/infrastructure/database"
-	"richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/infrastructure/database"
+	"github.com/yxxchange/richerPipeline/models"
 )
 
 var PipelineCfgRepo models.IPipelineCfg

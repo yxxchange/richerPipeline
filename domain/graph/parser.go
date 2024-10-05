@@ -3,8 +3,8 @@ package graph
 import (
 	"fmt"
 	"github.com/yxxchange/richerLog/log"
-	"richerPipeline/models"
-	"richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/pkg"
 )
 
 type IParser interface {

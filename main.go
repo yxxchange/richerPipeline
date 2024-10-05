@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"github.com/yxxchange/richerLog/log"
+	"github.com/yxxchange/richerPipeline/config"
+	"github.com/yxxchange/richerPipeline/infrastructure"
 	"os"
-	"richerPipeline/config"
-	"richerPipeline/infrastructure"
 )
 
 var (

@@ -1,8 +1,8 @@
 package graph
 
 import (
-	"richerPipeline/models"
-	"richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/pkg"
 )
 
 // WorkNode 用户侧的PipelineCfg，每一个工作节点对应一个工作节点

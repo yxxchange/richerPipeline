@@ -3,10 +3,10 @@ package pipeline_cfg
 import (
 	"fmt"
 	"github.com/yxxchange/richerLog/log"
-	"richerPipeline/domain/graph"
-	infra "richerPipeline/infrastructure"
-	"richerPipeline/models"
-	"richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/domain/graph"
+	infra "github.com/yxxchange/richerPipeline/infrastructure"
+	"github.com/yxxchange/richerPipeline/models"
+	"github.com/yxxchange/richerPipeline/pkg"
 )
 
 type PipelineCfgHandler struct{}

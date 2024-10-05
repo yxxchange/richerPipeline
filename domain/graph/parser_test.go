@@ -3,10 +3,10 @@ package graph
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/yxxchange/richerPipeline/models"
 	"gopkg.in/yaml.v3"
 	"io"
 	"os"
-	"richerPipeline/models"
 	"testing"
 )
 
