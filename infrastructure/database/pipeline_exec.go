@@ -20,7 +20,7 @@ func (p pipelineExecRepo) GetPipelineExec(id int64) (models.PipelineExec, error)
 	return exec, err
 }
 
-func (p pipelineExecRepo) CreatePipelineExec(exec models.PipelineExec) (int64, error) {
+func (p pipelineExecRepo) CreatePipelineExec(exec *models.PipelineExec) (int64, error) {
 	db := pipelineDB.Table(models.PipelineExec{}.TableName())
 	err := db.Create(&exec).Error
 	return exec.Id, err
