@@ -9,8 +9,8 @@ import (
 )
 
 type IParser interface {
-	Parse(raw RawPipeline) (graph WorkGraph, err error)
-	Validate(raw RawPipeline) error
+	Parse(raw models.RawPipeline) (graph models.WorkGraph, err error)
+	Validate(raw models.RawPipeline) error
 }
 
 func NewParser(version string, pipeType string) (IParser, error) {
@@ -34,7 +34,7 @@ func newV1Parser(pipeType string) (IParser, error) {
 type GeneralParser struct {
 }
 
-func (p *GeneralParser) Validate(raw RawPipeline) error {
+func (p *GeneralParser) Validate(raw models.RawPipeline) error {
 	nodeMap := extractNode(raw)
 	edgeMap := extractEdge(raw)
 	_, err := GenDAGraph(nodeMap, edgeMap)
@@ -45,30 +45,30 @@ func (p *GeneralParser) Validate(raw RawPipeline) error {
 	return nil
 }
 
-func (p *GeneralParser) Parse(raw RawPipeline) (WorkGraph, error) {
+func (p *GeneralParser) Parse(raw models.RawPipeline) (models.WorkGraph, error) {
 	nodeMap := extractNode(raw)
 	edgeMap := extractEdge(raw)
 	graph, err := GenDAGraph(nodeMap, edgeMap)
 	if err != nil {
 		log.Errorf("生成DAG图失败: %v", err)
-		return WorkGraph{}, err
+		return models.WorkGraph{}, err
 	}
-	return WorkGraph{
+	return models.WorkGraph{
 		Metadata: raw.Metadata,
 		DAGraph:  graph,
 		RawData:  raw,
 	}, nil
 }
 
-func extractNode(pipeline RawPipeline) map[string]*NodeInfo {
-	nodeMap := make(map[string]*NodeInfo)
+func extractNode(pipeline models.RawPipeline) map[string]*models.NodeInfo {
+	nodeMap := make(map[string]*models.NodeInfo)
 	for _, node := range pipeline.Graph.Nodes {
 		nodeMap[node.Name] = &node
 	}
 	return nodeMap
 }
 
-func extractEdge(pipeline RawPipeline) map[string][]string {
+func extractEdge(pipeline models.RawPipeline) map[string][]string {
 	edgeMap := make(map[string][]string)
 	for _, edge := range pipeline.Graph.Edges {
 		edgeMap[edge.Source] = append(edgeMap[edge.Source], edge.Target)
@@ -76,7 +76,7 @@ func extractEdge(pipeline RawPipeline) map[string][]string {
 	return edgeMap
 }
 
-func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res WorkDAGraph, err error) {
+func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) (res models.WorkDAGraph, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Infof("GenDAGraph panic: %v", err)
@@ -85,44 +85,44 @@ func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res 
 	}()
 	err = validate(nodeMap, edgeMap)
 	if err != nil {
-		return WorkDAGraph{}, err
+		return models.WorkDAGraph{}, err
 	}
-	resMap := make(map[string]*WorkNode)
+	resMap := make(map[string]*models.WorkNode)
 	for _, node := range nodeMap {
-		newNode := &WorkNode{
+		newNode := &models.WorkNode{
 			WorkerEngine: node.Ctx.Input.Worker,
 			Self:         node,
-			Child:        make([]*NodeInfo, 0),
+			Child:        make([]*models.NodeInfo, 0),
 		}
 		if _, ok := resMap[node.Name]; ok {
 			newNode = resMap[node.Name]
 		}
 		for _, target := range edgeMap[node.Name] {
 			if _, ok := resMap[target]; !ok {
-				resMap[target] = &WorkNode{
+				resMap[target] = &models.WorkNode{
 					WorkerEngine: node.Ctx.Input.Worker,
 					Self:         nodeMap[target],
-					Child:        make([]*NodeInfo, 0),
+					Child:        make([]*models.NodeInfo, 0),
 				}
 			}
 			newNode.Child = append(newNode.Child, nodeMap[target])
 		}
 		resMap[node.Name] = newNode
 	}
-	tmp := &WorkDAGraph{
+	tmp := &models.WorkDAGraph{
 		Map: resMap,
 	}
 	tmp = tmp.GenExtendInfo()
 	sorted, err := sort.TopologicalSort(tmp)
 	if err != nil {
-		return WorkDAGraph{}, common.WrapError(common.ErrDataNotDAG, err)
+		return models.WorkDAGraph{}, common.WrapError(common.ErrDataNotDAG, err)
 	}
-	tmp = sorted.(*WorkDAGraph)
+	tmp = sorted.(*models.WorkDAGraph)
 	res = *tmp
 	return
 }
 
-func validate(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) error {
+func validate(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) error {
 	if len(nodeMap) == 0 {
 		return fmt.Errorf("empty node map")
 	}

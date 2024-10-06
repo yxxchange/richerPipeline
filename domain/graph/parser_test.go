@@ -59,7 +59,7 @@ func TestGenDAGraph_InvalidEdge(t *testing.T) {
 	graph, err := GenDAGraph(nodeMap, edgeMap)
 
 	assert.Error(t, err)
-	assert.Equal(t, WorkDAGraph{}, graph)
+	assert.Equal(t, models.WorkDAGraph{}, graph)
 }
 
 func TestGenDAGraph_MultipleEdges(t *testing.T) {
@@ -112,7 +112,7 @@ func TestGenDAGraph_CircularDependency(t *testing.T) {
 	graph, err := GenDAGraph(nodeMap, edgeMap)
 
 	assert.Error(t, err)
-	assert.Equal(t, WorkDAGraph{}, graph)
+	assert.Equal(t, models.WorkDAGraph{}, graph)
 }
 
 func TestGenDAGraph_ComplexGraph(t *testing.T) {
@@ -264,7 +264,7 @@ func TestGenDAGraph_InvalidTargetNode(t *testing.T) {
 	graph, err := GenDAGraph(nodeMap, edgeMap)
 
 	assert.Error(t, err)
-	assert.Equal(t, WorkDAGraph{}, graph)
+	assert.Equal(t, models.WorkDAGraph{}, graph)
 }
 
 func TestGenDAGraph_InvalidSourceNode(t *testing.T) {
@@ -281,7 +281,7 @@ func TestGenDAGraph_InvalidSourceNode(t *testing.T) {
 
 	fmt.Printf("slice: %v\n", graph.OutputTopologicalSlice())
 	assert.Error(t, err)
-	assert.Equal(t, WorkDAGraph{}, graph)
+	assert.Equal(t, models.WorkDAGraph{}, graph)
 }
 
 func TestGeneralParser_Parse(t *testing.T) {

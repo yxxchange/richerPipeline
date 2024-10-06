@@ -1,8 +1,7 @@
-package graph
+package models
 
 import (
 	"encoding/json"
-	"github.com/yxxchange/richerPipeline/models"
 	"github.com/yxxchange/richerPipeline/pkg/sort"
 )
 
@@ -58,9 +57,9 @@ type Context struct {
 	Input Input `yaml:"input"`
 }
 
-var _ models.Object = &Context{}
+var _ Object = &Context{}
 
-func (c Context) DeepCopyObject() models.Object {
+func (c Context) DeepCopyObject() Object {
 	res, err := c.DeepCopy()
 	if err != nil {
 		return nil
@@ -68,7 +67,7 @@ func (c Context) DeepCopyObject() models.Object {
 	return res
 }
 
-func (c Context) DeepCopy() (models.Object, error) {
+func (c Context) DeepCopy() (Object, error) {
 	b, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
@@ -81,8 +80,8 @@ func (c Context) DeepCopy() (models.Object, error) {
 	return res, nil
 }
 
-func (c Context) ObjectType() models.ObjectType {
-	return models.ObjectTypeNode
+func (c Context) ObjectType() ObjectType {
+	return ObjectTypeNode
 }
 
 type Input struct {
