@@ -1,4 +1,4 @@
-package pkg
+package sort
 
 type Stack struct {
 	items []interface{}

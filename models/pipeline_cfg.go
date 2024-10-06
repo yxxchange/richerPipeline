@@ -68,12 +68,13 @@ type Config struct {
 }
 
 type Status struct {
-	State     string `yaml:"state"`
-	StartTime uint64 `yaml:"startTime"`
-	EndTime   uint64 `yaml:"endTime"`
-	Duration  uint64 `yaml:"duration"`
-	ErrMsg    string `yaml:"errMsg"`
-	Data      string `yaml:"data"`
+	State       string `yaml:"state"`
+	StartTime   uint64 `yaml:"startTime"`
+	EndTime     uint64 `yaml:"endTime"`
+	Duration    uint64 `yaml:"duration"`
+	ErrMsg      string `yaml:"errMsg"`
+	Data        string `yaml:"data"`
+	ExecutorUid string `yaml:"-"`
 }
 
 type EdgeInfo struct {

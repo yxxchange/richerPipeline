@@ -2,7 +2,7 @@ package graph
 
 import (
 	"github.com/yxxchange/richerPipeline/models"
-	"github.com/yxxchange/richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/pkg/sort"
 )
 
 // WorkNode 用户侧的PipelineCfg，每一个工作节点对应一个工作节点
@@ -30,7 +30,7 @@ type ExtendNodeInfo struct {
 	InDegree int
 }
 
-var _ pkg.ITopologicalSorter = &WorkDAGraph{}
+var _ sort.ITopologicalSorter = &WorkDAGraph{}
 
 func (w *WorkDAGraph) GenExtendInfo() *WorkDAGraph {
 	for _, node := range w.Map {

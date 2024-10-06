@@ -4,7 +4,7 @@ import (
 	"github.com/yxxchange/richerLog/log"
 	infra "github.com/yxxchange/richerPipeline/infrastructure"
 	"github.com/yxxchange/richerPipeline/models"
-	"github.com/yxxchange/richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/pkg/common"
 )
 
 type PipelineExecHandler struct{}
@@ -17,7 +17,7 @@ func (h PipelineExecHandler) CreatePipelineExec(cfg models.PipelineCfg, opt ...E
 	exec, err := models.PipelineCfg2Exec(cfg)
 	if err != nil {
 		log.Errorf("转换PipelineCfg到PipelineExec失败: %v", err)
-		return nil, pkg.WrapError(pkg.ErrDataModelConvert, err)
+		return nil, common.WrapError(common.ErrDataModelConvert, err)
 	}
 	for _, o := range opt {
 		err = o(&exec)
@@ -28,7 +28,7 @@ func (h PipelineExecHandler) CreatePipelineExec(cfg models.PipelineCfg, opt ...E
 	_, err = infra.PipelineExecRepo.CreatePipelineExec(&exec)
 	if err != nil {
 		log.Errorf("创建pipeline执行快照失败: %v", err)
-		return nil, pkg.WrapError(pkg.ErrDbOperation, err)
+		return nil, common.WrapError(common.ErrDbOperation, err)
 	}
 	return &exec, nil
 }

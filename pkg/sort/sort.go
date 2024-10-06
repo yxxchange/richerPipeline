@@ -1,6 +1,8 @@
-package pkg
+package sort
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type ITopologicalSorter interface {
 	Index() []interface{}

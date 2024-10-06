@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"github.com/yxxchange/richerLog/log"
 	"github.com/yxxchange/richerPipeline/models"
-	"github.com/yxxchange/richerPipeline/pkg"
+	"github.com/yxxchange/richerPipeline/pkg/common"
+	"github.com/yxxchange/richerPipeline/pkg/sort"
 )
 
 type IParser interface {
@@ -14,10 +15,10 @@ type IParser interface {
 
 func NewParser(version string, pipeType models.PipelineType) (IParser, error) {
 	switch version {
-	case pkg.VersionV1:
+	case common.VersionV1:
 		return newV1Parser(pipeType)
 	default:
-		return nil, pkg.WrapError(pkg.ErrPipelineVersion, fmt.Errorf("unsupported version: %s", version))
+		return nil, common.WrapError(common.ErrPipelineVersion, fmt.Errorf("unsupported version: %s", version))
 	}
 }
 
@@ -26,7 +27,7 @@ func newV1Parser(pipeType models.PipelineType) (IParser, error) {
 	case models.DefaultPipeline:
 		return &GeneralParser{}, nil
 	default:
-		return nil, pkg.WrapError(pkg.ErrPipelineType, fmt.Errorf("unsupported pipeline type: %s", pipeType))
+		return nil, common.WrapError(common.ErrPipelineType, fmt.Errorf("unsupported pipeline type: %s", pipeType))
 	}
 }
 
@@ -39,7 +40,7 @@ func (p *GeneralParser) Validate(raw models.RawPipeline) error {
 	_, err := GenDAGraph(nodeMap, edgeMap)
 	if err != nil {
 		log.Errorf("生成DAG图失败: %v", err)
-		return pkg.WrapError(pkg.ErrDataNotDAG, err)
+		return common.WrapError(common.ErrDataNotDAG, err)
 	}
 	return nil
 }
@@ -112,9 +113,9 @@ func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string
 		Map: resMap,
 	}
 	tmp = tmp.GenExtendInfo()
-	sorted, err := pkg.TopologicalSort(tmp)
+	sorted, err := sort.TopologicalSort(tmp)
 	if err != nil {
-		return WorkDAGraph{}, pkg.WrapError(pkg.ErrDataNotDAG, err)
+		return WorkDAGraph{}, common.WrapError(common.ErrDataNotDAG, err)
 	}
 	tmp = sorted.(*WorkDAGraph)
 	res = *tmp
