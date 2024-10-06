@@ -15,7 +15,7 @@ func NewPipeCfgHandler() PipelineCfgHandler {
 	return PipelineCfgHandler{}
 }
 
-func (h PipelineCfgHandler) CreatePipelineCfg(raw models.RawPipeline) error {
+func (h PipelineCfgHandler) CreatePipelineCfg(raw graph.RawPipeline) error {
 	parser, err := graph.NewParser(raw.PipelineVersion, models.PipelineType(raw.Metadata.Namespace))
 	if err != nil {
 		log.Errorf("pipeline解析器初始化失败: %v", err)
@@ -29,7 +29,7 @@ func (h PipelineCfgHandler) CreatePipelineCfg(raw models.RawPipeline) error {
 	return h.createPipelineCfg(raw)
 }
 
-func (h PipelineCfgHandler) createPipelineCfg(raw models.RawPipeline) error {
+func (h PipelineCfgHandler) createPipelineCfg(raw graph.RawPipeline) error {
 	cfg, err := models.RawPipeline2PipelineCfg(raw)
 	if err != nil {
 		log.Errorf("数据模型转换失败: %v", err)
@@ -53,7 +53,7 @@ func (h PipelineCfgHandler) GetPipelineCfg(id int64) (models.PipelineCfg, error)
 	return cfg, nil
 }
 
-func (h PipelineCfgHandler) UpdatePipelineCfg(id int64, raw models.RawPipeline) error {
+func (h PipelineCfgHandler) UpdatePipelineCfg(id int64, raw graph.RawPipeline) error {
 	cfg, err := models.RawPipeline2PipelineCfg(raw)
 	if err != nil {
 		log.Errorf("数据模型转换失败: %v", err)

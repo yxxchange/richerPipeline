@@ -9,11 +9,11 @@ import (
 )
 
 type IParser interface {
-	Parse(raw models.RawPipeline) (graph WorkGraph, err error)
-	Validate(raw models.RawPipeline) error
+	Parse(raw RawPipeline) (graph WorkGraph, err error)
+	Validate(raw RawPipeline) error
 }
 
-func NewParser(version string, pipeType models.PipelineType) (IParser, error) {
+func NewParser(version string, pipeType string) (IParser, error) {
 	switch version {
 	case common.VersionV1:
 		return newV1Parser(pipeType)
@@ -22,7 +22,7 @@ func NewParser(version string, pipeType models.PipelineType) (IParser, error) {
 	}
 }
 
-func newV1Parser(pipeType models.PipelineType) (IParser, error) {
+func newV1Parser(pipeType string) (IParser, error) {
 	switch pipeType {
 	case models.DefaultPipeline:
 		return &GeneralParser{}, nil
@@ -34,7 +34,7 @@ func newV1Parser(pipeType models.PipelineType) (IParser, error) {
 type GeneralParser struct {
 }
 
-func (p *GeneralParser) Validate(raw models.RawPipeline) error {
+func (p *GeneralParser) Validate(raw RawPipeline) error {
 	nodeMap := extractNode(raw)
 	edgeMap := extractEdge(raw)
 	_, err := GenDAGraph(nodeMap, edgeMap)
@@ -45,7 +45,7 @@ func (p *GeneralParser) Validate(raw models.RawPipeline) error {
 	return nil
 }
 
-func (p *GeneralParser) Parse(raw models.RawPipeline) (WorkGraph, error) {
+func (p *GeneralParser) Parse(raw RawPipeline) (WorkGraph, error) {
 	nodeMap := extractNode(raw)
 	edgeMap := extractEdge(raw)
 	graph, err := GenDAGraph(nodeMap, edgeMap)
@@ -60,15 +60,15 @@ func (p *GeneralParser) Parse(raw models.RawPipeline) (WorkGraph, error) {
 	}, nil
 }
 
-func extractNode(pipeline models.RawPipeline) map[string]*models.NodeInfo {
-	nodeMap := make(map[string]*models.NodeInfo)
+func extractNode(pipeline RawPipeline) map[string]*NodeInfo {
+	nodeMap := make(map[string]*NodeInfo)
 	for _, node := range pipeline.Graph.Nodes {
 		nodeMap[node.Name] = &node
 	}
 	return nodeMap
 }
 
-func extractEdge(pipeline models.RawPipeline) map[string][]string {
+func extractEdge(pipeline RawPipeline) map[string][]string {
 	edgeMap := make(map[string][]string)
 	for _, edge := range pipeline.Graph.Edges {
 		edgeMap[edge.Source] = append(edgeMap[edge.Source], edge.Target)
@@ -76,7 +76,7 @@ func extractEdge(pipeline models.RawPipeline) map[string][]string {
 	return edgeMap
 }
 
-func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) (res WorkDAGraph, err error) {
+func GenDAGraph(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) (res WorkDAGraph, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Infof("GenDAGraph panic: %v", err)
@@ -92,7 +92,7 @@ func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string
 		newNode := &WorkNode{
 			WorkerEngine: node.Ctx.Input.Worker,
 			Self:         node,
-			Child:        make([]*models.NodeInfo, 0),
+			Child:        make([]*NodeInfo, 0),
 		}
 		if _, ok := resMap[node.Name]; ok {
 			newNode = resMap[node.Name]
@@ -102,7 +102,7 @@ func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string
 				resMap[target] = &WorkNode{
 					WorkerEngine: node.Ctx.Input.Worker,
 					Self:         nodeMap[target],
-					Child:        make([]*models.NodeInfo, 0),
+					Child:        make([]*NodeInfo, 0),
 				}
 			}
 			newNode.Child = append(newNode.Child, nodeMap[target])
@@ -122,7 +122,7 @@ func GenDAGraph(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string
 	return
 }
 
-func validate(nodeMap map[string]*models.NodeInfo, edgeMap map[string][]string) error {
+func validate(nodeMap map[string]*NodeInfo, edgeMap map[string][]string) error {
 	if len(nodeMap) == 0 {
 		return fmt.Errorf("empty node map")
 	}

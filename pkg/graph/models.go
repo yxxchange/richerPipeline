@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"github.com/yxxchange/richerPipeline/models"
 	"github.com/yxxchange/richerPipeline/pkg/sort"
 )
@@ -8,16 +9,16 @@ import (
 // WorkNode 用户侧的PipelineCfg，每一个工作节点对应一个工作节点
 type WorkNode struct {
 	WorkerEngine string
-	Self         *models.NodeInfo
-	Child        []*models.NodeInfo
+	Self         *NodeInfo
+	Child        []*NodeInfo
 	extendInfo   ExtendNodeInfo
 }
 
 // WorkGraph 图结构，包含了元数据、DAG图、原始数据
 type WorkGraph struct {
-	Metadata models.Metadata
+	Metadata Metadata
 	DAGraph  WorkDAGraph
-	RawData  models.RawPipeline
+	RawData  RawPipeline
 }
 
 // WorkDAGraph 用于拓扑排序的图结构,同时保留了节点的业务信息
@@ -28,6 +29,87 @@ type WorkDAGraph struct {
 
 type ExtendNodeInfo struct {
 	InDegree int
+}
+
+type RawPipeline struct {
+	PipelineVersion string   `yaml:"pipelineVersion"`
+	Metadata        Metadata `yaml:"metadata"`
+	Graph           RawGraph `yaml:"graph"`
+}
+
+type Metadata struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace"`
+}
+
+type RawGraph struct {
+	Nodes []NodeInfo `yaml:"nodes"`
+	Edges []EdgeInfo `yaml:"edges"`
+}
+
+type NodeInfo struct {
+	Name   string  `yaml:"name"`
+	Ctx    Context `yaml:"ctx"`
+	Config Config  `yaml:"config"`
+	Status Status  `yaml:"status"`
+}
+
+type Context struct {
+	Input Input `yaml:"input"`
+}
+
+var _ models.Object = &Context{}
+
+func (c Context) DeepCopyObject() models.Object {
+	res, err := c.DeepCopy()
+	if err != nil {
+		return nil
+	}
+	return res
+}
+
+func (c Context) DeepCopy() (models.Object, error) {
+	b, err := json.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	var res Context
+	err = json.Unmarshal(b, &res)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (c Context) ObjectType() models.ObjectType {
+	return models.ObjectTypeNode
+}
+
+type Input struct {
+	Worker    string `yaml:"worker"`
+	JsonParam string `yaml:"jsonParam"`
+}
+
+type Config struct {
+	Retry           int    `yaml:"retry"`
+	Timeout         int    `yaml:"timeout"`
+	TimeoutPolicy   string `yaml:"timeoutPolicy"`
+	SchedulerPolicy string `yaml:"schedulerPolicy"`
+}
+
+type Status struct {
+	State       string `yaml:"state"`
+	StartTime   uint64 `yaml:"startTime"`
+	EndTime     uint64 `yaml:"endTime"`
+	Duration    uint64 `yaml:"duration"`
+	ErrMsg      string `yaml:"errMsg"`
+	Data        string `yaml:"data"`
+	ExecutorUid string `yaml:"-"`
+}
+
+type EdgeInfo struct {
+	Source string `yaml:"source"`
+	Target string `yaml:"target"`
 }
 
 var _ sort.ITopologicalSorter = &WorkDAGraph{}
