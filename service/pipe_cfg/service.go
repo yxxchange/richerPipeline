@@ -36,11 +36,11 @@ func (s *Service) GetById(pipeId int64) (*model.PipeCfg, error) {
 	return pipeCfg, nil
 }
 
-func (s *Service) Create(pipe *model.PipeCfg, nodes []*model.NodeCfg) error {
+func (s *Service) Create(pipe *model.PipeCfg, nodes []*model.NodeCfg) (int64, error) {
 	component := NewPipeComponent(pipe, nodes)
 	if err := s.Validate(component); err != nil {
 		log.Errorf("create pipe configuration failed, validate failed: %v", err)
-		return err
+		return 0, err
 	}
 
 	for name, vertex := range component.Graph.VertexMap {
@@ -61,7 +61,10 @@ func (s *Service) Create(pipe *model.PipeCfg, nodes []*model.NodeCfg) error {
 		return nil
 	})
 
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return pipe.Id, nil
 }
 
 func (s *Service) Validate(component *PipeComponent) error {

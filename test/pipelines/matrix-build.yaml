@@ -1,0 +1,173 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: matrix-build
+  namespace: default
+spec:
+  description: "矩阵构建流水线：多版本、多平台并行构建"
+  nodes:
+    - name: checkout
+      kind: task
+      spec:
+        image: "git:latest"
+        command: ["git", "clone", "$REPO_URL", "."]
+        resources:
+          cpu: "100m"
+          memory: "256Mi"
+    # Go 1.20 builds
+    - name: build-go120-linux
+      kind: task
+      spec:
+        image: "golang:1.20"
+        command: ["go", "build", "-o", "app-linux-amd64", "./..."]
+        env:
+          - name: GOOS
+            value: "linux"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-go120-windows
+      kind: task
+      spec:
+        image: "golang:1.20"
+        command: ["go", "build", "-o", "app-windows-amd64.exe", "./..."]
+        env:
+          - name: GOOS
+            value: "windows"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-go120-darwin
+      kind: task
+      spec:
+        image: "golang:1.20"
+        command: ["go", "build", "-o", "app-darwin-amd64", "./..."]
+        env:
+          - name: GOOS
+            value: "darwin"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    # Go 1.21 builds
+    - name: build-go121-linux
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "app-linux-amd64", "./..."]
+        env:
+          - name: GOOS
+            value: "linux"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-go121-windows
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "app-windows-amd64.exe", "./..."]
+        env:
+          - name: GOOS
+            value: "windows"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-go121-darwin
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "app-darwin-amd64", "./..."]
+        env:
+          - name: GOOS
+            value: "darwin"
+          - name: GOARCH
+            value: "amd64"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    # Tests
+    - name: test-go120
+      kind: task
+      spec:
+        image: "golang:1.20"
+        command: ["go", "test", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: test-go121
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    # Package
+    - name: package-artifacts
+      kind: task
+      spec:
+        image: "alpine:latest"
+        command: ["tar", "-czf", "release.tar.gz", "app-*"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+    - name: upload-artifacts
+      kind: task
+      spec:
+        image: "aws-cli:latest"
+        command: ["aws", "s3", "cp", "release.tar.gz", "s3://releases/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+  graph:
+    edges:
+      - from: checkout
+        to: build-go120-linux
+      - from: checkout
+        to: build-go120-windows
+      - from: checkout
+        to: build-go120-darwin
+      - from: checkout
+        to: build-go121-linux
+      - from: checkout
+        to: build-go121-windows
+      - from: checkout
+        to: build-go121-darwin
+      - from: checkout
+        to: test-go120
+      - from: checkout
+        to: test-go121
+      - from: build-go120-linux
+        to: package-artifacts
+      - from: build-go120-windows
+        to: package-artifacts
+      - from: build-go120-darwin
+        to: package-artifacts
+      - from: build-go121-linux
+        to: package-artifacts
+      - from: build-go121-windows
+        to: package-artifacts
+      - from: build-go121-darwin
+        to: package-artifacts
+      - from: test-go120
+        to: package-artifacts
+      - from: test-go121
+        to: package-artifacts
+      - from: package-artifacts
+        to: upload-artifacts
+  envVars:
+    - scope: global
+      key: REPO_URL
+      value: "https://github.com/company/app.git"
+    - scope: global
+      key: CGO_ENABLED
+      value: "0"

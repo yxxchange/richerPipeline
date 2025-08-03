@@ -17,6 +17,7 @@ log:
             - localhost:9092
 http:
   endpoint: http://localhost:8080
+  port: 8080
 
 mysql:
   host: localhost

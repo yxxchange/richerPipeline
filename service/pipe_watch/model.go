@@ -37,7 +37,7 @@ func (ec *EventChannel) Done() <-chan struct{} {
 }
 
 func (ec *EventChannel) Close() {
-	once.Do(func() {
+	ec.once.Do(func() {
 		close(ec.done)
 		close(ec.ch)
 		close(ec.errMsg)

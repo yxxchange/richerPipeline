@@ -1,0 +1,101 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: conditional-flow
+  namespace: default
+spec:
+  description: "条件流水线：根据分支和条件执行不同的部署策略"
+  nodes:
+    - name: build
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "./..."]
+        resources:
+          cpu: "1000m"
+          memory: "2Gi"
+    - name: test
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: check-branch
+      kind: condition
+      spec:
+        condition: "${GIT_BRANCH} == 'main'"
+        onTrue: "deploy-production"
+        onFalse: "deploy-staging"
+    - name: deploy-staging
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/staging/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+        condition: "${GIT_BRANCH} != 'main'"
+    - name: canary-deploy
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/canary/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+        condition: "${GIT_BRANCH} == 'main'"
+    - name: smoke-test
+      kind: task
+      spec:
+        image: "curl:latest"
+        command: ["./scripts/smoke-test.sh"]
+        resources:
+          cpu: "100m"
+          memory: "256Mi"
+    - name: deploy-production
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/production/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+        condition: "${GIT_BRANCH} == 'main' && ${SMOKE_TEST_RESULT} == 'success'"
+    - name: rollback
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "rollout", "undo", "deployment/app"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+        condition: "${SMOKE_TEST_RESULT} == 'failed'"
+  graph:
+    edges:
+      - from: build
+        to: test
+      - from: test
+        to: check-branch
+      - from: check-branch
+        to: deploy-staging
+        condition: "${GIT_BRANCH} != 'main'"
+      - from: check-branch
+        to: canary-deploy
+        condition: "${GIT_BRANCH} == 'main'"
+      - from: canary-deploy
+        to: smoke-test
+      - from: smoke-test
+        to: deploy-production
+        condition: "${SMOKE_TEST_RESULT} == 'success'"
+      - from: smoke-test
+        to: rollback
+        condition: "${SMOKE_TEST_RESULT} == 'failed'"
+  envVars:
+    - scope: global
+      key: GIT_BRANCH
+      value: "${GIT_BRANCH}"
+    - scope: global
+      key: BUILD_NUMBER
+      value: "${BUILD_NUMBER}"

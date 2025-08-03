@@ -65,25 +65,25 @@ func (s *Service) Run(pipeId int64) error {
 func (s *Service) List(namespace, kind string, limit int64) (*NodeExecList, error) {
 	// 从 etcd 读取数据
 	etcdClient := etcd.GetClient()
-	
+
 	// 构建 etcd key prefix
 	keyPrefix := s.buildKeyPrefix(namespace, kind)
-	
+
 	resp, err := etcdClient.Get(s.ctx, keyPrefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list from etcd: %w", err)
 	}
-	
+
 	var items []*model.NodeExec
 	var maxRevision int64
-	
+
 	for _, kv := range resp.Kvs {
 		var nodeExec model.NodeExec
 		if err := json.Unmarshal(kv.Value, &nodeExec); err != nil {
 			log.Warnf("failed to unmarshal node exec from key %s: %v", string(kv.Key), err)
 			continue
 		}
-		
+
 		// 过滤条件
 		if namespace != "" && nodeExec.Namespace != namespace {
 			continue
@@ -91,23 +91,23 @@ func (s *Service) List(namespace, kind string, limit int64) (*NodeExecList, erro
 		if kind != "" && nodeExec.Kind != kind {
 			continue
 		}
-		
+
 		items = append(items, &nodeExec)
 		if kv.ModRevision > maxRevision {
 			maxRevision = kv.ModRevision
 		}
 	}
-	
+
 	// 应用 limit
 	if limit > 0 && int64(len(items)) > limit {
 		items = items[:limit]
 	}
-	
+
 	resourceVersion := strconv.FormatInt(maxRevision, 10)
 	if maxRevision == 0 {
 		resourceVersion = strconv.FormatInt(resp.Header.Revision, 10)
 	}
-	
+
 	return &NodeExecList{
 		Items:           items,
 		ResourceVersion: resourceVersion,
@@ -117,53 +117,75 @@ func (s *Service) List(namespace, kind string, limit int64) (*NodeExecList, erro
 func (s *Service) Get(namespace, kind string, id int64) (*model.NodeExec, error) {
 	// 从 etcd 读取数据
 	etcdClient := etcd.GetClient()
-	
+
 	key := s.buildObjectKey(namespace, kind, id)
 	resp, err := etcdClient.Get(s.ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get from etcd: %w", err)
 	}
-	
+
 	if len(resp.Kvs) == 0 {
 		return nil, fmt.Errorf("node exec not found: %s/%s/%d", namespace, kind, id)
 	}
-	
+
 	var nodeExec model.NodeExec
 	if err := json.Unmarshal(resp.Kvs[0].Value, &nodeExec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal node exec: %w", err)
 	}
-	
+
 	return &nodeExec, nil
 }
 
 // Update 更新节点执行状态
 func (s *Service) Update(nodeExec *model.NodeExec) (*model.NodeExec, error) {
-	// 1. 更新数据库
-	_, err := s.nodeExec.Where(dao.NodeExec.Id.Eq(nodeExec.Id)).Updates(nodeExec)
+	log.Infof("🔄 Starting update for node: id=%d, name=%s, phase=%s",
+		nodeExec.Id, nodeExec.Name, nodeExec.Phase.Phase)
+
+	// 1. 先从数据库获取当前数据进行对比
+	oldNode, err := s.nodeExec.Where(dao.NodeExec.Id.Eq(nodeExec.Id)).First()
+	if err != nil {
+		log.Errorf("failed to get current node from db: %v", err)
+		return nil, err
+	}
+
+	log.Infof("📊 Current node state: phase=%s -> new phase=%s",
+		oldNode.Phase.Phase, nodeExec.Phase.Phase)
+
+	// 2. 更新数据库
+	result, err := s.nodeExec.Where(dao.NodeExec.Id.Eq(nodeExec.Id)).Updates(nodeExec)
 	if err != nil {
 		log.Errorf("update node exec in db failed: %v", err)
 		return nil, err
 	}
-	
-	// 2. 更新 etcd
+
+	log.Infof("📝 Database update result: affected rows=%d", result.RowsAffected)
+
+	// 3. 更新 etcd
 	key := KeyGen(nodeExec)
 	value, err := ValueGen(nodeExec)
 	if err != nil {
 		log.Errorf("generate value failed: %v", err)
 		return nil, err
 	}
-	
+
+	log.Infof("🔑 etcd key=%s", key)
+	log.Debugf("📄 etcd value=%s", value)
+
 	err = etcd.Put(s.ctx, key, value)
 	if err != nil {
 		log.Errorf("update node exec in etcd failed: %v", err)
 		return nil, err
 	}
-	
-	// 3. 检查是否进入结束状态，如果是则触发流水线逻辑
+
+	log.Infof("✅ Successfully updated node exec: id=%d, phase=%s",
+		nodeExec.Id, nodeExec.Phase.Phase)
+
+	// 4. 检查是否进入结束状态
 	if s.isTerminalState(nodeExec.Phase.Phase) {
+		log.Infof("🏁 Node reached terminal state, triggering completion logic")
 		go s.handleNodeCompletion(nodeExec)
 	}
-	
+
 	return nodeExec, nil
 }
 
@@ -179,7 +201,7 @@ func (s *Service) Delete(namespace, kind string, id int64) error {
 		log.Errorf("delete node exec from db failed: %v", err)
 		return err
 	}
-	
+
 	// 2. 从 etcd 删除
 	key := s.buildObjectKey(namespace, kind, id)
 	_, err = etcd.GetClient().Delete(s.ctx, key)
@@ -187,7 +209,7 @@ func (s *Service) Delete(namespace, kind string, id int64) error {
 		log.Errorf("delete node exec from etcd failed: %v", err)
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -199,15 +221,11 @@ func (s *Service) isTerminalState(phase string) bool {
 // handleNodeCompletion 处理节点完成后的逻辑
 func (s *Service) handleNodeCompletion(completedNode *model.NodeExec) {
 	log.Infof("Node %s completed with status %s", completedNode.Name, completedNode.Phase.Phase)
-	
-	// 1. 从 etcd 中删除运行时数据
-	key := KeyGen(completedNode)
-	_, err := etcd.GetClient().Delete(context.Background(), key)
-	if err != nil {
-		log.Errorf("failed to delete runtime data from etcd: %v", err)
-	}
-	
-	// 2. 查找下游节点并更新入度
+
+	// 不立即删除 etcd 数据，让客户端能监听到最终状态
+	// 可以设置一个延迟删除，或者由其他机制清理
+
+	// 查找下游节点并更新入度
 	if completedNode.Phase.Phase == model.NodePhaseSucceeded {
 		s.triggerDownstreamNodes(completedNode)
 	}
@@ -221,13 +239,13 @@ func (s *Service) triggerDownstreamNodes(completedNode *model.NodeExec) {
 		log.Errorf("failed to get node configs: %v", err)
 		return
 	}
-	
+
 	// 构建依赖关系图
 	dependencyMap := s.buildDependencyMap(nodeCfgs)
-	
+
 	// 查找依赖当前节点的下游节点
 	downstreamNodes := dependencyMap[completedNode.Name]
-	
+
 	for _, downstreamName := range downstreamNodes {
 		// 获取下游节点的执行实例
 		downstreamExec, err := s.nodeExec.Where(
@@ -238,7 +256,7 @@ func (s *Service) triggerDownstreamNodes(completedNode *model.NodeExec) {
 			log.Errorf("failed to get downstream node %s: %v", downstreamName, err)
 			continue
 		}
-		
+
 		// 使用事务更新入度
 		err = s.updateDownstreamNodeWithTransaction(downstreamExec, downstreamName)
 		if err != nil {
@@ -246,7 +264,7 @@ func (s *Service) triggerDownstreamNodes(completedNode *model.NodeExec) {
 			continue
 		}
 	}
-	
+
 	// 检查流水线是否完成
 	s.checkPipelineCompletion(completedNode.PipeExecId)
 }
@@ -256,16 +274,16 @@ func (s *Service) buildDependencyMap(nodeCfgs []*model.NodeCfg) map[string][]str
 	if len(nodeCfgs) == 0 {
 		return make(map[string][]string)
 	}
-	
+
 	// 获取流水线配置
 	pipeCfg, err := s.pipeCfg.Where(dao.PipeCfg.Id.Eq(nodeCfgs[0].PipeCfgId)).First()
 	if err != nil {
 		log.Errorf("failed to get pipe config: %v", err)
 		return make(map[string][]string)
 	}
-	
+
 	dependencyMap := make(map[string][]string)
-	
+
 	// 从流水线图结构中构建依赖关系
 	if pipeCfg.Graph != nil && len(pipeCfg.Graph.Edges) > 0 {
 		for _, edge := range pipeCfg.Graph.Edges {
@@ -283,7 +301,7 @@ func (s *Service) buildDependencyMap(nodeCfgs []*model.NodeCfg) map[string][]str
 			dependencyMap[current] = []string{next}
 		}
 	}
-	
+
 	return dependencyMap
 }
 
@@ -292,18 +310,18 @@ func (s *Service) updateDownstreamNodeWithTransaction(downstreamExec *model.Node
 	return s.Query.Transaction(func(tx *dao.Query) error {
 		// 减少入度
 		downstreamExec.InDegree--
-		
+
 		// 如果入度为0，则设置为Ready状态
 		if downstreamExec.InDegree == 0 {
 			downstreamExec.Phase.Phase = model.NodePhaseReady
 		}
-		
+
 		// 更新数据库
 		_, err := tx.NodeExec.WithContext(s.ctx).Where(dao.NodeExec.Id.Eq(downstreamExec.Id)).Updates(downstreamExec)
 		if err != nil {
 			return fmt.Errorf("failed to update node in db: %w", err)
 		}
-		
+
 		// 如果入度为0，写入etcd触发执行
 		if downstreamExec.InDegree == 0 {
 			key := KeyGen(downstreamExec)
@@ -311,17 +329,17 @@ func (s *Service) updateDownstreamNodeWithTransaction(downstreamExec *model.Node
 			if err != nil {
 				return fmt.Errorf("failed to generate value: %w", err)
 			}
-			
+
 			err = etcd.Put(s.ctx, key, value)
 			if err != nil {
 				return fmt.Errorf("failed to put to etcd: %w", err)
 			}
-			
+
 			log.Infof("✅ Triggered downstream node: %s (InDegree: 0 -> Ready)", downstreamName)
 		} else {
 			log.Infof("⏳ Downstream node %s waiting (InDegree: %d)", downstreamName, downstreamExec.InDegree)
 		}
-		
+
 		return nil
 	})
 }
@@ -334,23 +352,25 @@ func (s *Service) checkPipelineCompletion(pipeExecId int64) {
 		log.Errorf("failed to get pipeline nodes: %v", err)
 		return
 	}
-	
+
 	allCompleted := true
 	successCount := 0
 	failedCount := 0
-	
+
 	for _, node := range nodes {
 		switch node.Phase.Phase {
 		case model.NodePhaseSucceeded:
 			successCount++
 		case model.NodePhaseFailed:
 			failedCount++
-			allCompleted = false
 		default:
-			allCompleted = false
+			// 只有非终止状态才认为未完成
+			if !s.isTerminalState(node.Phase.Phase) {
+				allCompleted = false
+			}
 		}
 	}
-	
+
 	if allCompleted {
 		if failedCount > 0 {
 			log.Infof("🔴 Pipeline %d completed with failures: %d succeeded, %d failed", pipeExecId, successCount, failedCount)
@@ -359,6 +379,9 @@ func (s *Service) checkPipelineCompletion(pipeExecId int64) {
 			log.Infof("🟢 Pipeline %d completed successfully: %d nodes succeeded", pipeExecId, successCount)
 			s.updatePipelineStatus(pipeExecId, "Succeeded")
 		}
+
+		// 流水线完成后删除所有运行时数据
+		s.cleanupPipelineRuntime(pipeExecId, nodes)
 	}
 }
 
@@ -370,7 +393,7 @@ func (s *Service) updatePipelineStatus(pipeExecId int64, status string) {
 		log.Errorf("failed to get pipe exec: %v", err)
 		return
 	}
-	
+
 	// 更新状态
 	var state int
 	switch status {
@@ -381,15 +404,37 @@ func (s *Service) updatePipelineStatus(pipeExecId int64, status string) {
 	default:
 		state = model.PipeExecStateRunning
 	}
-	
+
 	pipeExec.State = state
 	_, err = s.pipeExec.Where(dao.PipeExec.Id.Eq(pipeExecId)).Updates(pipeExec)
 	if err != nil {
 		log.Errorf("failed to update pipeline status: %v", err)
 		return
 	}
-	
+
 	log.Infof("🏁 Pipeline %d status updated to: %s (state=%d)", pipeExecId, status, state)
+}
+
+// cleanupPipelineRuntime 清理流水线运行时数据
+func (s *Service) cleanupPipelineRuntime(pipeExecId int64, nodes []*model.NodeExec) {
+	log.Infof("🧹 Cleaning up runtime data for pipeline %d", pipeExecId)
+
+	etcdClient := etcd.GetClient()
+	deleteCount := 0
+
+	for _, node := range nodes {
+		key := KeyGen(node)
+		_, err := etcdClient.Delete(s.ctx, key)
+		if err != nil {
+			log.Errorf("❌ Failed to delete runtime data for node %s: %v", node.Name, err)
+		} else {
+			deleteCount++
+			log.Debugf("🗑️ Deleted runtime data: %s", key)
+		}
+	}
+
+	log.Infof("✅ Cleaned up %d/%d runtime data entries for pipeline %d",
+		deleteCount, len(nodes), pipeExecId)
 }
 func run(tx *dao.Query, ctx context.Context, pipeCfg *model.PipeCfg, nodeCfgList []*model.NodeCfg) error {
 	pipeExec := model.NewPipeExec(pipeCfg)

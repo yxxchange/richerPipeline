@@ -45,8 +45,14 @@ func InitEtcd() {
 
 // Put 设置键值对
 func Put(ctx context.Context, key, value string) error {
-	_, err := cli.Put(ctx, key, value)
-	return err
+	log.Infof("🔄 etcd PUT starting: key=%s", key)
+	resp, err := cli.Put(ctx, key, value)
+	if err != nil {
+		log.Errorf("❌ etcd PUT failed: key=%s, error=%v", key, err)
+		return err
+	}
+	log.Infof("✅ etcd PUT success: key=%s, revision=%d", key, resp.Header.Revision)
+	return nil
 }
 
 // TransactionPut 带事务的设置键值对

@@ -42,9 +42,13 @@ func Create(c *gin.Context) {
 		common.ResponseError(c, -1, "invalid request parameters")
 		return
 	}
-	if err := pipe_cfg.NewService(c).Create(req.View.PipeCfg, req.View.NodeCfgList); err != nil {
+	pipeId, err := pipe_cfg.NewService(c).Create(req.View.PipeCfg, req.View.NodeCfgList)
+	if err != nil {
 		common.ResponseError(c, pipe_cfg.ErrorCode, err.Error())
 		return
 	}
-	common.ResponseOk(c, "pipe configuration created successfully")
+	common.ResponseOk(c, map[string]interface{}{
+		"message": "pipe configuration created successfully",
+		"pipe_id": pipeId,
+	})
 }

@@ -1,0 +1,73 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: parallel-tasks
+  namespace: default
+spec:
+  description: "并行任务流水线：构建后并行执行单元测试和集成测试，然后部署"
+  nodes:
+    - name: build
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "./..."]
+        resources:
+          cpu: "1000m"
+          memory: "2Gi"
+    - name: unit-test
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "-short", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: integration-test
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "-integration", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+        env:
+          - name: DB_HOST
+            value: "test-db"
+    - name: security-scan
+      kind: task
+      spec:
+        image: "security-scanner:latest"
+        command: ["scan", "--format", "json", "./"]
+        resources:
+          cpu: "300m"
+          memory: "512Mi"
+    - name: deploy
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+  graph:
+    edges:
+      - from: build
+        to: unit-test
+      - from: build
+        to: integration-test
+      - from: build
+        to: security-scan
+      - from: unit-test
+        to: deploy
+      - from: integration-test
+        to: deploy
+      - from: security-scan
+        to: deploy
+  envVars:
+    - scope: global
+      key: PROJECT_NAME
+      value: "parallel-app"
+    - scope: node
+      target: integration-test
+      key: TEST_TIMEOUT
+      value: "300s"

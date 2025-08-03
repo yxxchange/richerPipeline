@@ -116,14 +116,9 @@ func (s *sharedInformer) Run(ctx context.Context) error {
 		return fmt.Errorf("initial list failed: %w", err)
 	}
 
-	// 标记为已同步
-	s.mu.Lock()
-	s.synced = true
-	s.mu.Unlock()
+	log.Infof("Initial list completed for namespace=%s, kind=%s, starting watch...", s.namespace, s.kind)
 
-	log.Infof("Informer synced for namespace=%s, kind=%s", s.namespace, s.kind)
-
-	// 启动 Watch 循环
+	// 启动 Watch 循环，只有 Watch 成功建立连接后才标记为同步
 	return s.watchLoop(ctx)
 }
 
@@ -184,15 +179,27 @@ func (s *sharedInformer) watch(ctx context.Context) error {
 		Kind:      s.kind,
 	}
 
+	log.Infof("🔍 Starting watch for namespace=%s, kind=%s", s.namespace, s.kind)
 	watcher, err := s.client.Watch(ctx, opts)
 	if err != nil {
+		log.Errorf("❌ Failed to start watch: %v", err)
 		return fmt.Errorf("failed to start watch: %w", err)
 	}
 	defer watcher.Stop()
 
+	// 只有在 Watch 成功启动后才标记为已同步
+	s.mu.Lock()
+	if !s.synced {
+		s.synced = true
+		log.Infof("✅ Informer synced for namespace=%s, kind=%s", s.namespace, s.kind)
+	}
+	s.mu.Unlock()
+
 	// 设置重新同步定时器
 	resyncTicker := time.NewTicker(s.resyncPeriod)
 	defer resyncTicker.Stop()
+
+	log.Infof("👂 Watch connection established, listening for events...")
 
 	for {
 		select {
@@ -201,6 +208,7 @@ func (s *sharedInformer) watch(ctx context.Context) error {
 
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
+				log.Warnf("🔌 Watch channel closed")
 				return fmt.Errorf("watch channel closed")
 			}
 
@@ -219,42 +227,47 @@ func (s *sharedInformer) watch(ctx context.Context) error {
 
 // handleWatchEvent 处理 Watch 事件
 func (s *sharedInformer) handleWatchEvent(event typed.Event) error {
+	log.Infof("📨 Informer received event: type=%s", event.Type)
+
 	if event.Error != nil {
+		log.Errorf("❌ Event error: %v", event.Error)
 		return event.Error
 	}
 
 	if event.Object == nil {
 		// 对于删除事件，Object 可能为空
 		if event.Type != typed.EventTypeDeleted {
-			return fmt.Errorf("received event with nil object: %s", event.Type)
+			log.Infof("❌ Received event with nil object: %s", event.Type)
 		}
 		return nil
 	}
 
 	key := s.getKey(event.Object)
+	log.Infof("🔑 Event key: %s, node: %s, phase: %s",
+		key, event.Object.Name, event.Object.Phase.Phase)
 
 	switch event.Type {
 	case typed.EventTypeAdded:
 		s.store.Add(key, event.Object)
+		log.Infof("➕ Notifying ADD event for: %s", key)
 		s.notifyAdd(event.Object)
-		log.Debugf("Added object: %s", key)
 
 	case typed.EventTypeModified:
 		oldObj, _ := s.store.Get(key)
 		s.store.Update(key, event.Object)
+		log.Infof("🔄 Notifying UPDATE event for: %s", key)
 		s.notifyUpdate(oldObj, event.Object)
-		log.Debugf("Updated object: %s", key)
 
 	case typed.EventTypeDeleted:
 		oldObj, _ := s.store.Get(key)
 		s.store.Delete(key)
 		if oldObj != nil {
+			log.Infof("❌ Notifying DELETE event for: %s", key)
 			s.notifyDelete(oldObj)
 		}
-		log.Debugf("Deleted object: %s", key)
 
 	default:
-		log.Warnf("Unknown event type: %s", event.Type)
+		log.Warnf("❓ Unknown event type: %s", event.Type)
 	}
 
 	return nil
@@ -365,7 +378,9 @@ func (s *sharedInformer) notifyAdd(obj *model.NodeExec) {
 	copy(handlers, s.handlers)
 	s.mu.RUnlock()
 
-	for _, handler := range handlers {
+	log.Infof("📢 Notifying %d handlers for ADD event: %s", len(handlers), obj.Name)
+	for i, handler := range handlers {
+		log.Debugf("📢 Calling handler %d for ADD", i)
 		handler.OnAdd(obj)
 	}
 }
@@ -376,7 +391,9 @@ func (s *sharedInformer) notifyUpdate(oldObj, newObj *model.NodeExec) {
 	copy(handlers, s.handlers)
 	s.mu.RUnlock()
 
-	for _, handler := range handlers {
+	log.Infof("📢 Notifying %d handlers for UPDATE event: %s", len(handlers), newObj.Name)
+	for i, handler := range handlers {
+		log.Debugf("📢 Calling handler %d for UPDATE", i)
 		handler.OnUpdate(oldObj, newObj)
 	}
 }
@@ -387,7 +404,9 @@ func (s *sharedInformer) notifyDelete(obj *model.NodeExec) {
 	copy(handlers, s.handlers)
 	s.mu.RUnlock()
 
-	for _, handler := range handlers {
+	log.Infof("📢 Notifying %d handlers for DELETE event: %s", len(handlers), obj.Name)
+	for i, handler := range handlers {
+		log.Debugf("📢 Calling handler %d for DELETE", i)
 		handler.OnDelete(obj)
 	}
 }

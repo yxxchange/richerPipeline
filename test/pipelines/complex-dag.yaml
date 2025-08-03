@@ -1,0 +1,123 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: complex-dag
+  namespace: production
+spec:
+  description: "复杂DAG流水线：多阶段构建、测试、审批和部署"
+  nodes:
+    - name: checkout
+      kind: task
+      spec:
+        image: "git:latest"
+        command: ["git", "clone", "$REPO_URL", "."]
+        resources:
+          cpu: "100m"
+          memory: "256Mi"
+    - name: build-frontend
+      kind: task
+      spec:
+        image: "node:18"
+        command: ["npm", "run", "build"]
+        workingDir: "/workspace/frontend"
+        resources:
+          cpu: "1000m"
+          memory: "2Gi"
+    - name: build-backend
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "app", "./cmd/server"]
+        workingDir: "/workspace/backend"
+        resources:
+          cpu: "1000m"
+          memory: "2Gi"
+    - name: test-frontend
+      kind: task
+      spec:
+        image: "node:18"
+        command: ["npm", "test"]
+        workingDir: "/workspace/frontend"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: test-backend
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./..."]
+        workingDir: "/workspace/backend"
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: e2e-test
+      kind: task
+      spec:
+        image: "cypress:latest"
+        command: ["cypress", "run"]
+        resources:
+          cpu: "1000m"
+          memory: "2Gi"
+    - name: security-audit
+      kind: task
+      spec:
+        image: "security-scanner:latest"
+        command: ["audit", "--severity", "high"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: manual-approval
+      kind: approval
+      spec:
+        approvers: ["team-lead", "devops-admin"]
+        timeout: "24h"
+        message: "请审批生产环境部署"
+    - name: deploy-staging
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/staging/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+    - name: deploy-production
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/production/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+  graph:
+    edges:
+      - from: checkout
+        to: build-frontend
+      - from: checkout
+        to: build-backend
+      - from: build-frontend
+        to: test-frontend
+      - from: build-backend
+        to: test-backend
+      - from: test-frontend
+        to: e2e-test
+      - from: test-backend
+        to: e2e-test
+      - from: e2e-test
+        to: security-audit
+      - from: security-audit
+        to: deploy-staging
+      - from: deploy-staging
+        to: manual-approval
+      - from: manual-approval
+        to: deploy-production
+  envVars:
+    - scope: global
+      key: REPO_URL
+      value: "https://github.com/company/app.git"
+    - scope: global
+      key: BUILD_ENV
+      value: "production"
+    - scope: node
+      target: deploy-production
+      key: NAMESPACE
+      value: "production"

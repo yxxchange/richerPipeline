@@ -58,7 +58,6 @@ type WatchInterface interface {
 type NodeExecInterface interface {
 	List(ctx context.Context, opts ListOptions) (*NodeExecList, error)
 	Watch(ctx context.Context, opts WatchOptions) (WatchInterface, error)
-	ListAndWatch(ctx context.Context, opts ListOptions) (WatchInterface, error)
 	Get(ctx context.Context, namespace, kind string, id int64) (*model.NodeExec, error)
 	Update(ctx context.Context, nodeExec *model.NodeExec) (*model.NodeExec, error)
 	Delete(ctx context.Context, namespace, kind string, id int64) error
@@ -183,7 +182,7 @@ func (c *nodeExecClient) Get(ctx context.Context, namespace, kind string, id int
 	return response.Info, nil
 }
 
-// Watch 通过服务端 API 监听资源变化
+// Watch 通过服务端 API 监听资源变化（包含 list and watch）
 func (c *nodeExecClient) Watch(ctx context.Context, opts WatchOptions) (WatchInterface, error) {
 	w := &watcher{
 		namespace:       opts.Namespace,
@@ -195,33 +194,6 @@ func (c *nodeExecClient) Watch(ctx context.Context, opts WatchOptions) (WatchInt
 	}
 
 	watcherID := fmt.Sprintf("%s-%s-%d", opts.Namespace, opts.Kind, time.Now().UnixNano())
-	c.watchers.Store(watcherID, w)
-
-	go w.start(ctx, watcherID)
-
-	return w, nil
-}
-
-// ListAndWatch 先List再 Watch，避免遗漏
-func (c *nodeExecClient) ListAndWatch(ctx context.Context, opts ListOptions) (WatchInterface, error) {
-	// 先获取当前所有资源
-	list, err := c.List(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("initial list failed: %w", err)
-	}
-
-	// 创建特殊的watcher，先发送List结果，再监听Watch
-	w := &listAndWatcher{
-		namespace:       opts.Namespace,
-		kind:            opts.Kind,
-		resourceVersion: list.ResourceVersion,
-		resultChan:      make(chan Event, 100),
-		stopChan:        make(chan struct{}),
-		client:          c,
-		initialList:     list.Items,
-	}
-
-	watcherID := fmt.Sprintf("listwatch-%s-%s-%d", opts.Namespace, opts.Kind, time.Now().UnixNano())
 	c.watchers.Store(watcherID, w)
 
 	go w.start(ctx, watcherID)
@@ -280,6 +252,11 @@ func (w *watcher) start(ctx context.Context, watcherID string) {
 // watchServer 通过服务端 API 监听变化
 func (w *watcher) watchServer(ctx context.Context) {
 	url := fmt.Sprintf("%s/operator/namespace/%s/kind/%s", w.client.baseURL, w.namespace, w.kind)
+	
+	// 添加 resourceVersion 参数
+	if w.resourceVersion != "" {
+		url += fmt.Sprintf("?resourceVersion=%s", w.resourceVersion)
+	}
 
 	for {
 		select {
@@ -302,6 +279,8 @@ func (w *watcher) watchServer(ctx context.Context) {
 
 // connectAndWatch 连接服务端并监听事件
 func (w *watcher) connectAndWatch(ctx context.Context, url string) error {
+	log.Infof("🔗 Connecting to watch server: %s", url)
+	
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -309,20 +288,25 @@ func (w *watcher) connectAndWatch(ctx context.Context, url string) error {
 
 	resp, err := w.client.httpClient.Do(req)
 	if err != nil {
+		log.Errorf("❌ Failed to connect to server: %v", err)
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
 	defer resp.Body.Close()
 
+	log.Infof("📡 HTTP response status: %d", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
+	log.Infof("✅ Watch connection established, reading events...")
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		select {
 		case <-w.stopChan:
+			log.Infof("🛑 Watch stopped by client")
 			return nil
 		case <-ctx.Done():
+			log.Infof("🛑 Watch stopped by context")
 			return ctx.Err()
 		default:
 			line := scanner.Text()
@@ -330,173 +314,29 @@ func (w *watcher) connectAndWatch(ctx context.Context, url string) error {
 				continue
 			}
 
+			log.Debugf("📨 Received raw event: %s", line)
 			var event Event
 			if err := json.Unmarshal([]byte(line), &event); err != nil {
-				log.Warnf("failed to unmarshal event: %v", err)
+				log.Warnf("❌ Failed to unmarshal event: %v, raw: %s", err, line)
 				continue
 			}
 
+			log.Infof("📨 Parsed event: type=%s", event.Type)
 			w.sendEvent(event)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
+		log.Errorf("❌ Scanner error: %v", err)
 		return fmt.Errorf("scanner error: %w", err)
 	}
 
+	log.Infof("🔌 Watch connection closed normally")
 	return nil
 }
 
 // sendEvent 发送事件
 func (w *watcher) sendEvent(event Event) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	if w.stopped {
-		return
-	}
-
-	select {
-	case w.resultChan <- event:
-	case <-time.After(5 * time.Second):
-		log.Warnf("send event timeout, dropping event: %+v", event)
-	}
-}
-
-// listAndWatcher ListAndWatch的特殊实现
-type listAndWatcher struct {
-	namespace       string
-	kind            string
-	resourceVersion string
-	resultChan      chan Event
-	stopChan        chan struct{}
-	client          *nodeExecClient
-	initialList     []*model.NodeExec
-	stopped         bool
-	mu              sync.RWMutex
-}
-
-// ResultChan 获取结果通道
-func (w *listAndWatcher) ResultChan() <-chan Event {
-	return w.resultChan
-}
-
-// Stop 停止监听
-func (w *listAndWatcher) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.stopped {
-		return
-	}
-
-	w.stopped = true
-	close(w.stopChan)
-	close(w.resultChan)
-}
-
-// start 启动ListAndWatch
-func (w *listAndWatcher) start(ctx context.Context, watcherID string) {
-	defer func() {
-		w.client.watchers.Delete(watcherID)
-		if r := recover(); r != nil {
-			log.Errorf("listAndWatcher panic: %v", r)
-			w.sendEvent(Event{
-				Type:  EventTypeError,
-				Error: fmt.Errorf("listAndWatcher panic: %v", r),
-			})
-		}
-	}()
-
-	// 先发送初始列表中的所有资源
-	for _, item := range w.initialList {
-		select {
-		case <-w.stopChan:
-			return
-		default:
-			w.sendEvent(Event{
-				Type:   EventTypeAdded,
-				Object: item,
-			})
-		}
-	}
-
-	// 然后开始监听服务端变化
-	w.watchServer(ctx)
-}
-
-// watchServer 通过服务端 API 监听变化
-func (w *listAndWatcher) watchServer(ctx context.Context) {
-	url := fmt.Sprintf("%s/operator/namespace/%s/kind/%s", w.client.baseURL, w.namespace, w.kind)
-
-	for {
-		select {
-		case <-w.stopChan:
-			return
-		case <-ctx.Done():
-			return
-		default:
-			if err := w.connectAndWatch(ctx, url); err != nil {
-				log.Errorf("watch connection failed: %v", err)
-				w.sendEvent(Event{
-					Type:  EventTypeError,
-					Error: err,
-				})
-				time.Sleep(5 * time.Second) // 重连延迟
-			}
-		}
-	}
-}
-
-// connectAndWatch 连接服务端并监听事件
-func (w *listAndWatcher) connectAndWatch(ctx context.Context, url string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := w.client.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to connect to server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned status %d", resp.StatusCode)
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		select {
-		case <-w.stopChan:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			line := scanner.Text()
-			if line == "" {
-				continue
-			}
-
-			var event Event
-			if err := json.Unmarshal([]byte(line), &event); err != nil {
-				log.Warnf("failed to unmarshal event: %v", err)
-				continue
-			}
-
-			w.sendEvent(event)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scanner error: %w", err)
-	}
-
-	return nil
-}
-
-// sendEvent 发送事件
-func (w *listAndWatcher) sendEvent(event Event) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 

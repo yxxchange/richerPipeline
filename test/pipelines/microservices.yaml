@@ -1,0 +1,115 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: microservices-deploy
+  namespace: microservices
+spec:
+  description: "微服务部署流水线：多个服务并行构建和部署"
+  nodes:
+    - name: build-user-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "user-service", "./services/user"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-order-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "order-service", "./services/order"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-payment-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "payment-service", "./services/payment"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: build-notification-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "-o", "notification-service", "./services/notification"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: test-user-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./services/user/..."]
+        resources:
+          cpu: "300m"
+          memory: "512Mi"
+    - name: test-order-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./services/order/..."]
+        resources:
+          cpu: "300m"
+          memory: "512Mi"
+    - name: test-payment-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./services/payment/..."]
+        resources:
+          cpu: "300m"
+          memory: "512Mi"
+    - name: test-notification-service
+      kind: task
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./services/notification/..."]
+        resources:
+          cpu: "300m"
+          memory: "512Mi"
+    - name: integration-test
+      kind: task
+      spec:
+        image: "postman/newman:latest"
+        command: ["newman", "run", "tests/integration.postman_collection.json"]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: deploy-services
+      kind: task
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/microservices/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+  graph:
+    edges:
+      - from: build-user-service
+        to: test-user-service
+      - from: build-order-service
+        to: test-order-service
+      - from: build-payment-service
+        to: test-payment-service
+      - from: build-notification-service
+        to: test-notification-service
+      - from: test-user-service
+        to: integration-test
+      - from: test-order-service
+        to: integration-test
+      - from: test-payment-service
+        to: integration-test
+      - from: test-notification-service
+        to: integration-test
+      - from: integration-test
+        to: deploy-services
+  envVars:
+    - scope: global
+      key: REGISTRY
+      value: "registry.company.com"
+    - scope: global
+      key: TAG
+      value: "${BUILD_NUMBER}"

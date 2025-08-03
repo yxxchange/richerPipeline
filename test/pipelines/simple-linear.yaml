@@ -1,0 +1,48 @@
+apiVersion: pipefree.io/v1
+kind: Pipeline
+metadata:
+  name: simple-linear
+  space: default  # 流水线空间
+spec:
+  description: "简单的线性流水线：构建 -> 测试 -> 部署"
+  nodes:
+    - name: build
+      kind: task
+      namespace: default  # 节点命名空间
+      spec:
+        image: "golang:1.21"
+        command: ["go", "build", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: test
+      kind: task
+      namespace: default  # 节点命名空间
+      spec:
+        image: "golang:1.21"
+        command: ["go", "test", "./..."]
+        resources:
+          cpu: "500m"
+          memory: "1Gi"
+    - name: deploy
+      kind: task
+      namespace: default  # 节点命名空间
+      spec:
+        image: "kubectl:latest"
+        command: ["kubectl", "apply", "-f", "k8s/"]
+        resources:
+          cpu: "200m"
+          memory: "512Mi"
+  graph:
+    edges:
+      - from: build
+        to: test
+      - from: test
+        to: deploy
+  envVars:
+    - scope: global
+      key: PROJECT_NAME
+      value: "simple-app"
+    - scope: global
+      key: BUILD_ENV
+      value: "production"
