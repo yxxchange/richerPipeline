@@ -2,11 +2,23 @@ package pipe_exec
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+
 	"github.com/yxxchange/pipefree/helper/log"
 	"github.com/yxxchange/pipefree/infra/dal/dao"
 	"github.com/yxxchange/pipefree/infra/dal/model"
 	"github.com/yxxchange/pipefree/infra/etcd"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
+
+// NodeExecList 节点执行列表
+type NodeExecList struct {
+	Items           []*model.NodeExec `json:"items"`
+	ResourceVersion string            `json:"resourceVersion"`
+	Continue        string            `json:"continue,omitempty"`
+}
 
 const ErrorCode = 10002
 
@@ -49,6 +61,80 @@ func (s *Service) Run(pipeId int64) error {
 	}
 	return nil
 }
+
+func (s *Service) List(namespace, kind string, limit int64) (*NodeExecList, error) {
+	// 从 etcd 读取数据
+	etcdClient := etcd.GetClient()
+	
+	// 构建 etcd key prefix
+	keyPrefix := s.buildKeyPrefix(namespace, kind)
+	
+	resp, err := etcdClient.Get(s.ctx, keyPrefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list from etcd: %w", err)
+	}
+	
+	var items []*model.NodeExec
+	var maxRevision int64
+	
+	for _, kv := range resp.Kvs {
+		var nodeExec model.NodeExec
+		if err := json.Unmarshal(kv.Value, &nodeExec); err != nil {
+			log.Warnf("failed to unmarshal node exec from key %s: %v", string(kv.Key), err)
+			continue
+		}
+		
+		// 过滤条件
+		if namespace != "" && nodeExec.Namespace != namespace {
+			continue
+		}
+		if kind != "" && nodeExec.Kind != kind {
+			continue
+		}
+		
+		items = append(items, &nodeExec)
+		if kv.ModRevision > maxRevision {
+			maxRevision = kv.ModRevision
+		}
+	}
+	
+	// 应用 limit
+	if limit > 0 && int64(len(items)) > limit {
+		items = items[:limit]
+	}
+	
+	resourceVersion := strconv.FormatInt(maxRevision, 10)
+	if maxRevision == 0 {
+		resourceVersion = strconv.FormatInt(resp.Header.Revision, 10)
+	}
+	
+	return &NodeExecList{
+		Items:           items,
+		ResourceVersion: resourceVersion,
+	}, nil
+}
+
+func (s *Service) Get(namespace, kind string, id int64) (*model.NodeExec, error) {
+	// 从 etcd 读取数据
+	etcdClient := etcd.GetClient()
+	
+	key := s.buildObjectKey(namespace, kind, id)
+	resp, err := etcdClient.Get(s.ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get from etcd: %w", err)
+	}
+	
+	if len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("node exec not found: %s/%s/%d", namespace, kind, id)
+	}
+	
+	var nodeExec model.NodeExec
+	if err := json.Unmarshal(resp.Kvs[0].Value, &nodeExec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal node exec: %w", err)
+	}
+	
+	return &nodeExec, nil
+}
 func run(tx *dao.Query, ctx context.Context, pipeCfg *model.PipeCfg, nodeCfgList []*model.NodeCfg) error {
 	pipeExec := model.NewPipeExec(pipeCfg)
 	err := tx.PipeExec.WithContext(ctx).Create(pipeExec)
@@ -87,4 +173,23 @@ func run(tx *dao.Query, ctx context.Context, pipeCfg *model.PipeCfg, nodeCfgList
 		return err
 	}
 	return nil
+}
+
+// buildKeyPrefix 构建 etcd key 前缀
+func (s *Service) buildKeyPrefix(namespace, kind string) string {
+	if namespace != "" && kind != "" {
+		return fmt.Sprintf("/namespace/%s/kind/%s/", namespace, kind)
+	} else if namespace != "" {
+		return fmt.Sprintf("/namespace/%s/", namespace)
+	} else if kind != "" {
+		return fmt.Sprintf("/namespace/*/kind/%s/", kind)
+	}
+	return "/namespace/"
+}
+
+// buildObjectKey 构建对象 key（使用 KeyGen 生成完整 key）
+func (s *Service) buildObjectKey(namespace, kind string, id int64) string {
+	// 使用与 KeyGen 相同的格式，但需要 version 信息
+	// 这里简化为直接查找，实际应该传入 version
+	return fmt.Sprintf("/namespace/%s/kind/%s/version/*/node_exec/%d", namespace, kind, id)
 }

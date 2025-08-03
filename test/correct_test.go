@@ -2,17 +2,22 @@ package test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/yxxchange/pipefree/client/typed"
+	"github.com/yxxchange/pipefree/client_pipe"
+	"github.com/yxxchange/pipefree/client_pipe/typed"
 	"github.com/yxxchange/pipefree/config"
 	"github.com/yxxchange/pipefree/infra/dal"
 	"github.com/yxxchange/pipefree/infra/dal/dao"
 	"github.com/yxxchange/pipefree/infra/dal/model"
 	"github.com/yxxchange/pipefree/infra/etcd"
-	"github.com/yxxchange/pipefree/service/pipe_exec"
+	server "github.com/yxxchange/pipefree/http"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 func TestCorrectIntegration(t *testing.T) {
@@ -21,11 +26,29 @@ func TestCorrectIntegration(t *testing.T) {
 	dal.InitDB()
 	etcd.InitEtcd()
 
-	ctx := context.Background()
-	client := typed.NewNodeExecClient()
+	// 启动测试服务器
+	go func() {
+		srv := server.NewServer()
+		if err := http.ListenAndServe(":8081", srv); err != nil {
+			t.Logf("Server error: %v", err)
+		}
+	}()
+	time.Sleep(2 * time.Second) // 等待服务器启动
 
-	// 清理
+	ctx := context.Background()
+	// 使用测试端口的客户端配置
+	clientset := client_pipe.NewClientSetWithTestConfig()
+	client := clientset.NodeExecs()
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	// 清理数据库和etcd
 	dao.Q.NodeExec.WithContext(ctx).Where(dao.Q.NodeExec.Namespace.Eq("test")).Delete()
+	// 清理etcd中的测试数据
+	etcdClient := etcd.GetClient()
+	_, err := etcdClient.Delete(ctx, "/namespace/test/", clientv3.WithPrefix())
+	if err != nil {
+		t.Logf("Failed to clean etcd: %v", err)
+	}
 
 	// 事件收集
 	var serverActions []string
@@ -38,7 +61,10 @@ func TestCorrectIntegration(t *testing.T) {
 		Kind:      "task",
 	}
 
-	watcher, err := client.ListAndWatch(ctx, listOpts)
+	watcher, err := client.Watch(ctx, typed.WatchOptions{
+		Namespace: listOpts.Namespace,
+		Kind:      listOpts.Kind,
+	})
 	if err != nil {
 		t.Fatalf("ListAndWatch failed: %v", err)
 	}
@@ -60,55 +86,80 @@ func TestCorrectIntegration(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond) // 等待监听启动
 
-	// 服务端操作：创建3个节点
+	// 服务端操作：通过API创建节点（模拟创建流水线配置和执行）
 	nodes := []string{"build", "test", "deploy"}
-	var nodeExecs []*model.NodeExec
 
-	for _, name := range nodes {
-		// 1. 创建节点
-		node := &model.NodeExec{
+	// 1. 先创建流水线配置（简化版，直接插入数据库）
+	pipeCfg := &model.PipeCfg{
+		Name:    "test-pipeline",
+		Space:   "test",
+		Version: 1,
+	}
+	err = dao.Q.PipeCfg.WithContext(ctx).Create(pipeCfg)
+	if err != nil {
+		t.Fatalf("Create pipe config failed: %v", err)
+	}
+
+	// 2. 创建节点配置
+	for i, name := range nodes {
+		nodeCfg := &model.NodeCfg{
 			Name:      name,
 			Kind:      "task",
 			Namespace: "test",
 			Version:   "v1",
-			Phase: &model.NodePhase{
-				Phase: model.NodePhaseReady,
-			},
+			PipeSpace: "test",
+			PipeName:  "test-pipeline",
+			PipeCfgId: pipeCfg.Id,
+			InDegree:  0, // 简化为并行执行
+			Spec:      &model.Kv{},
 		}
-
-		err := dao.Q.NodeExec.WithContext(ctx).Create(node)
+		err = dao.Q.NodeCfg.WithContext(ctx).Create(nodeCfg)
 		if err != nil {
-			t.Fatalf("Create failed: %v", err)
+			t.Fatalf("Create node config %d failed: %v", i, err)
 		}
-
-		nodeExecs = append(nodeExecs, node)
-
-		// 2. 写入etcd
-		key := pipe_exec.KeyGen(node)
-		value, _ := pipe_exec.ValueGen(node)
-		etcd.Put(ctx, key, value)
-
-		mu.Lock()
-		serverActions = append(serverActions, "CREATE "+name)
-		mu.Unlock()
-
-		t.Logf("🏭 Server: CREATE %s", name)
-		time.Sleep(300 * time.Millisecond)
 	}
 
-	// 服务端操作：更新节点状态
+	// 3. 通过服务端API启动流水线执行
+	url := fmt.Sprintf("http://localhost:8081/api/v1/pipe_exec/%d", pipeCfg.Id)
+	resp, err := httpClient.Post(url, "application/json", nil)
+	if err != nil {
+		t.Fatalf("Start pipeline failed: %v", err)
+	}
+	resp.Body.Close()
+
+	mu.Lock()
+	serverActions = append(serverActions, "CREATE PIPELINE")
+	mu.Unlock()
+	t.Logf("🏭 Server: CREATE PIPELINE")
+	time.Sleep(1 * time.Second) // 等待节点创建
+
+	// 模拟节点状态变化（实际应该由执行引擎处理）
+	// 这里简化为直接更新数据库和etcd来模拟状态变化
 	phases := []string{model.NodePhasePending, model.NodePhaseRunning, model.NodePhaseSucceeded}
+
+	// 获取创建的节点
+	nodeExecs, err := dao.Q.NodeExec.WithContext(ctx).Where(
+		dao.Q.NodeExec.Namespace.Eq("test"),
+		dao.Q.NodeExec.Kind.Eq("task"),
+	).Find()
+	if err != nil {
+		t.Fatalf("Get node execs failed: %v", err)
+	}
 
 	for _, phase := range phases {
 		for _, node := range nodeExecs {
-			// 更新状态
+			// 通过服务端API更新状态（这里简化为直接数据库操作）
 			node.Phase.Phase = phase
-			dao.Q.NodeExec.WithContext(ctx).Where(dao.Q.NodeExec.Id.Eq(node.Id)).Updates(node)
+			_, err = dao.Q.NodeExec.WithContext(ctx).Where(dao.Q.NodeExec.Id.Eq(node.Id)).Updates(node)
+			if err != nil {
+				t.Logf("Update node failed: %v", err)
+				continue
+			}
 
-			// 更新etcd
-			key := pipe_exec.KeyGen(node)
-			value, _ := pipe_exec.ValueGen(node)
-			etcd.Put(ctx, key, value)
+			// 同步到etcd（模拟服务端行为）
+			key := fmt.Sprintf("/pipefree/nodeexec/%s/%s/%d", node.Namespace, node.Kind, node.Id)
+			value, _ := json.Marshal(node)
+			etcd.Put(ctx, key, string(value))
 
 			mu.Lock()
 			serverActions = append(serverActions, "UPDATE "+node.Name+" "+phase)
