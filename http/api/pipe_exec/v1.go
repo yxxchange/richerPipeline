@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yxxchange/pipefree/http/common"
+	"github.com/yxxchange/pipefree/infra/dal/model"
 	"github.com/yxxchange/pipefree/service/pipe_exec"
 )
 
@@ -18,6 +19,8 @@ func RegisterV1(router *gin.RouterGroup) {
 		group.POST("/:pipe_id", Run)
 		group.GET("/list", List)
 		group.GET("/get", Get)
+		group.PUT("/update", Update)
+		group.DELETE("/delete", Delete)
 	}
 }
 
@@ -85,4 +88,47 @@ func Get(c *gin.Context) {
 	}
 	
 	common.ResponseOk(c, nodeExec)
+}
+
+func Update(c *gin.Context) {
+	var nodeExec model.NodeExec
+	if err := c.ShouldBindJSON(&nodeExec); err != nil {
+		common.ResponseError(c, -1, "invalid request body")
+		return
+	}
+	
+	service := pipe_exec.NewService(c)
+	updatedNode, err := service.Update(&nodeExec)
+	if err != nil {
+		common.ResponseError(c, pipe_exec.ErrorCode, err.Error())
+		return
+	}
+	
+	common.ResponseOk(c, updatedNode)
+}
+
+func Delete(c *gin.Context) {
+	namespace := c.Query("namespace")
+	kind := c.Query("kind")
+	idStr := c.Query("id")
+	
+	if namespace == "" || kind == "" || idStr == "" {
+		common.ResponseError(c, -1, "namespace, kind and id are required")
+		return
+	}
+	
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		common.ResponseError(c, -1, "invalid id parameter")
+		return
+	}
+	
+	service := pipe_exec.NewService(c)
+	err = service.Delete(namespace, kind, id)
+	if err != nil {
+		common.ResponseError(c, pipe_exec.ErrorCode, err.Error())
+		return
+	}
+	
+	common.ResponseOk(c, "deleted successfully")
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	
 	"sync"
 	"time"
 
@@ -61,6 +60,8 @@ type NodeExecInterface interface {
 	Watch(ctx context.Context, opts WatchOptions) (WatchInterface, error)
 	ListAndWatch(ctx context.Context, opts ListOptions) (WatchInterface, error)
 	Get(ctx context.Context, namespace, kind string, id int64) (*model.NodeExec, error)
+	Update(ctx context.Context, nodeExec *model.NodeExec) (*model.NodeExec, error)
+	Delete(ctx context.Context, namespace, kind string, id int64) error
 }
 
 // NodeExecList 节点执行列表
