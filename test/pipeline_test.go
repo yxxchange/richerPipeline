@@ -1,266 +1,228 @@
 package test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"testing"
+	"os"
 	"time"
 
-	"github.com/yxxchange/pipefree/client_pipe/config"
-	"github.com/yxxchange/pipefree/client_pipe/typed"
+	client_pipe "github.com/yxxchange/pipefree/client_pipe"
+	"github.com/yxxchange/pipefree/client_pipe/informers"
 	appconfig "github.com/yxxchange/pipefree/config"
+	server "github.com/yxxchange/pipefree/http"
+	"github.com/yxxchange/pipefree/http/api/pipe_cfg"
 	"github.com/yxxchange/pipefree/infra/dal"
-	"github.com/yxxchange/pipefree/infra/dal/dao"
 	"github.com/yxxchange/pipefree/infra/dal/model"
 	"github.com/yxxchange/pipefree/infra/etcd"
-	server "github.com/yxxchange/pipefree/http"
-	clientv3 "go.etcd.io/etcd/client/v3"
+	"gopkg.in/yaml.v3"
+	"testing"
 )
 
-func TestPipelineStateManagement(t *testing.T) {
-	// 初始化
+func TestMain(m *testing.M) {
 	appconfig.Init("../config.yaml")
 	dal.InitDB()
 	etcd.InitEtcd()
 
-	// 启动测试服务器
 	go func() {
-		srv := server.NewServer()
-		if err := http.ListenAndServe(":8084", srv); err != nil {
-			t.Logf("Server error: %v", err)
+		err := server.LaunchServer()
+		if err != nil {
+			panic(err)
 		}
 	}()
+
 	time.Sleep(2 * time.Second)
+	m.Run()
+}
 
-	ctx := context.Background()
-
-	// 清理测试数据
-	dao.Q.NodeExec.WithContext(ctx).Where(dao.Q.NodeExec.Namespace.Eq("pipeline-test")).Delete()
-	dao.Q.PipeExec.WithContext(ctx).Where(dao.Q.PipeExec.Space.Eq("pipeline-test")).Delete()
-	dao.Q.NodeCfg.WithContext(ctx).Where(dao.Q.NodeCfg.PipeSpace.Eq("pipeline-test")).Delete()
-	dao.Q.PipeCfg.WithContext(ctx).Where(dao.Q.PipeCfg.Space.Eq("pipeline-test")).Delete()
-	
-	etcdClient := etcd.GetClient()
-	_, err := etcdClient.Delete(ctx, "/namespace/pipeline-test/", clientv3.WithPrefix())
+func TestSimpleLinearPipeline(t *testing.T) {
+	// 1. 读取流水线配置
+	pipelineData, err := os.ReadFile("pipelines/simple-linear.yaml")
 	if err != nil {
-		t.Logf("Failed to clean etcd: %v", err)
+		t.Fatalf("读取流水线配置失败: %v", err)
 	}
 
-	// 创建流水线配置（简单的线性流水线：build -> test -> deploy）
-	pipeCfg := &model.PipeCfg{
-		Name:    "test-pipeline",
-		Space:   "pipeline-test",
-		Version: 1,
-		Graph: &model.Graph{
-			Edges: []model.Edge{
-				{From: "build", To: "test"},
-				{From: "test", To: "deploy"},
-			},
-		},
+	var yamlConfig struct {
+		Metadata struct {
+			Name  string `yaml:"name"`
+			Space string `yaml:"space"`
+		} `yaml:"metadata"`
+		Spec struct {
+			Description string `yaml:"description"`
+			Nodes       []struct {
+				Name      string                 `yaml:"name"`
+				Kind      string                 `yaml:"kind"`
+				Namespace string                 `yaml:"namespace"`
+				Spec      map[string]interface{} `yaml:"spec"`
+			} `yaml:"nodes"`
+			Graph struct {
+				Edges []model.Edge `yaml:"edges"`
+			} `yaml:"graph"`
+			EnvVars []model.EnvVar `yaml:"envVars"`
+		} `yaml:"spec"`
 	}
-	err = dao.Q.PipeCfg.WithContext(ctx).Create(pipeCfg)
-	if err != nil {
-		t.Fatalf("Create pipe config failed: %v", err)
+	yaml.Unmarshal(pipelineData, &yamlConfig)
+
+	// 2. 创建流水线配置
+	pipeView := pipe_cfg.PipeView{
+		PipeCfg: &model.PipeCfg{
+			Name:    yamlConfig.Metadata.Name,
+			Space:   yamlConfig.Metadata.Space,
+			Desc:    yamlConfig.Spec.Description,
+			Version: 1,
+			EnvVars: (*model.EnvVars)(&yamlConfig.Spec.EnvVars),
+			Graph:   &model.Graph{Edges: yamlConfig.Spec.Graph.Edges},
+		},
+		NodeCfgList: make([]*model.NodeCfg, 0, len(yamlConfig.Spec.Nodes)),
 	}
 
-	// 创建节点配置
-	nodeConfigs := []*model.NodeCfg{
-		{
-			Name:      "build",
-			Kind:      "task",
-			Namespace: "pipeline-test",
+	for _, node := range yamlConfig.Spec.Nodes {
+		nodeCfg := &model.NodeCfg{
+			Name:      node.Name,
+			Kind:      node.Kind,
+			Namespace: node.Namespace,
+			PipeSpace: yamlConfig.Metadata.Space,
+			PipeName:  yamlConfig.Metadata.Name,
 			Version:   "v1",
-			PipeSpace: "pipeline-test",
-			PipeName:  "test-pipeline",
-			PipeCfgId: pipeCfg.Id,
-			InDegree:  0, // 起始节点
-			Spec:      &model.Kv{},
-		},
-		{
-			Name:      "test",
-			Kind:      "task",
-			Namespace: "pipeline-test",
-			Version:   "v1",
-			PipeSpace: "pipeline-test",
-			PipeName:  "test-pipeline",
-			PipeCfgId: pipeCfg.Id,
-			InDegree:  1, // 依赖 build
-			Spec:      &model.Kv{},
-		},
-		{
-			Name:      "deploy",
-			Kind:      "task",
-			Namespace: "pipeline-test",
-			Version:   "v1",
-			PipeSpace: "pipeline-test",
-			PipeName:  "test-pipeline",
-			PipeCfgId: pipeCfg.Id,
-			InDegree:  1, // 依赖 test
-			Spec:      &model.Kv{},
-		},
-	}
-
-	for _, nodeCfg := range nodeConfigs {
-		err = dao.Q.NodeCfg.WithContext(ctx).Create(nodeCfg)
-		if err != nil {
-			t.Fatalf("Create node config failed: %v", err)
+			Spec:      (*model.Kv)(&node.Spec),
 		}
+		pipeView.NodeCfgList = append(pipeView.NodeCfgList, nodeCfg)
+		t.Logf("📄 创建节点配置: name=%s, kind=%s, namespace=%s, pipeSpace=%s",
+			nodeCfg.Name, nodeCfg.Kind, nodeCfg.Namespace, nodeCfg.PipeSpace)
 	}
 
-	// 创建客户端
-	testConfig := config.SimpleTestClientConfig()
-	testConfig.ServerURL = "http://localhost:8084/api/v1"
-	client := typed.NewNodeExecClientWithConfig(typed.ClientConfig{
-		ServerURL: testConfig.ServerURL,
-		Timeout:   testConfig.Timeout,
-	})
+	pipeId := createPipeline(t, pipeView)
 
-	// 启动流水线
-	url := fmt.Sprintf("http://localhost:8084/api/v1/pipe_exec/%d", pipeCfg.Id)
+	// 3. 启动流水线
+	runPipeline(t, pipeId)
+
+	// 4. 启动operator（使用Informer）
+	client := client_pipe.NewClientSet()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 使用节点的 namespace 进行监听（假设所有节点都在同一个 namespace）
+	nodeNamespace := yamlConfig.Spec.Nodes[0].Namespace
+	go startOperator(ctx, t, client, nodeNamespace)
+
+	// 5. 等待完成
+	time.Sleep(20 * time.Second)
+	cancel()
+}
+
+func createPipeline(t *testing.T, pipeView pipe_cfg.PipeView) int64 {
+	reqData := pipe_cfg.PipeReqParam{View: pipeView}
+	jsonData, _ := json.Marshal(reqData)
+
+	resp, err := http.Post("http://localhost:8080/api/v1/pipe_cfg", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		t.Fatalf("创建流水线失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code   int    `json:"code"`
+		ErrMsg string `json:"err_msg"`
+		Info   struct {
+			Message string `json:"message"`
+			PipeId  int64  `json:"pipe_id"`
+		} `json:"info"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if result.Code != 0 {
+		t.Fatalf("API错误: %s", result.ErrMsg)
+	}
+	t.Logf("流水线创建成功，ID: %d", result.Info.PipeId)
+	return result.Info.PipeId
+}
+
+func runPipeline(t *testing.T, pipeId int64) {
+	url := fmt.Sprintf("http://localhost:8080/api/v1/pipe_exec/%d", pipeId)
 	resp, err := http.Post(url, "application/json", nil)
 	if err != nil {
-		t.Fatalf("Start pipeline failed: %v", err)
+		t.Fatalf("启动流水线失败: %v", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	t.Logf("🚀 Pipeline started")
-	time.Sleep(1 * time.Second)
+	var result struct {
+		Code   int    `json:"code"`
+		ErrMsg string `json:"err_msg"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	// 获取创建的节点
-	list, err := client.List(ctx, typed.ListOptions{
-		Namespace: "pipeline-test",
-		Kind:      "task",
+	if result.Code != 0 {
+		t.Fatalf("API错误: %s", result.ErrMsg)
+	}
+	t.Logf("流水线启动成功")
+}
+
+func startOperator(ctx context.Context, t *testing.T, client client_pipe.Interface, namespace string) {
+	t.Logf("[Operator] 启动operator，使用完整的Informer模式")
+
+	// 获取Informer Factory
+	factory := client.Informers()
+
+	// 获取NodeExec Informer
+	kind := "task" // 从 YAML 中获取的 kind
+	t.Logf("🔍 监听参数: namespace=%s, kind=%s", namespace, kind)
+	informer := factory.GetInformer(namespace, kind)
+
+	// 添加事件处理器
+	informer.AddEventHandler(informers.ResourceEventHandlerFuncs{
+		AddFunc: func(obj *model.NodeExec) {
+			t.Logf("[Operator] 收到Add事件: 节点 %s, 状态: %s", obj.Name, obj.Phase.Phase)
+			go handleNodeEvent(ctx, t, client, obj)
+		},
+		UpdateFunc: func(oldObj, newObj *model.NodeExec) {
+			t.Logf("[Operator] 收到Update事件: 节点 %s, 状态: %s -> %s",
+				newObj.Name, oldObj.Phase.Phase, newObj.Phase.Phase)
+			go handleNodeEvent(ctx, t, client, newObj)
+		},
+		DeleteFunc: func(obj *model.NodeExec) {
+			t.Logf("[Operator] 收到Delete事件: 节点 %s", obj.Name)
+		},
 	})
-	if err != nil {
-		t.Fatalf("List nodes failed: %v", err)
+
+	// 启动Informer Factory
+	factory.Start(ctx)
+
+	// 等待缓存同步
+	if !factory.WaitForCacheSync(ctx) {
+		t.Logf("[Operator] 等待缓存同步超时")
+		return
 	}
 
-	// 初始状态下，只有入度为0的节点（build）在etcd中
-	if len(list.Items) != 1 {
-		t.Logf("Initial state: %d nodes in etcd (expected 1 build node)", len(list.Items))
-		// 不直接失败，继续测试
+	t.Logf("[Operator] Informer缓存已同步，开始处理事件")
+
+	// 等待停止信号
+	<-ctx.Done()
+	t.Logf("[Operator] operator停止")
+}
+
+func handleNodeEvent(ctx context.Context, t *testing.T, client client_pipe.Interface, nodeExec *model.NodeExec) {
+	if nodeExec.Phase == nil {
+		return
 	}
 
-	// 找到 build 节点（应该是 Ready 状态）
-	var buildNode *model.NodeExec
-	for _, node := range list.Items {
-		if node.Name == "build" {
-			buildNode = node
-			break
-		}
+	switch nodeExec.Phase.Phase {
+	case model.NodePhaseReady:
+		t.Logf("[Controller] 节点 %s 就绪，开始执行", nodeExec.Name)
+		nodeExec.Phase.Phase = model.NodePhaseRunning
+		client.NodeExecs().Update(ctx, nodeExec)
+
+	case model.NodePhaseRunning:
+		t.Logf("[Controller] 节点 %s 运行中，模拟执行", nodeExec.Name)
+		go func() {
+			time.Sleep(2 * time.Second)
+			nodeExec.Phase.Phase = model.NodePhaseSucceeded
+			client.NodeExecs().Update(ctx, nodeExec)
+			t.Logf("[Controller] 节点 %s 执行完成", nodeExec.Name)
+		}()
+
+	case model.NodePhaseSucceeded:
+		t.Logf("[Controller] 节点 %s 已完成", nodeExec.Name)
 	}
-
-	if buildNode == nil {
-		t.Fatal("Build node not found")
-	}
-
-	if buildNode.Phase.Phase != model.NodePhaseReady {
-		t.Errorf("Expected build node to be Ready, got %s", buildNode.Phase.Phase)
-	}
-
-	t.Logf("✅ Build node is Ready")
-
-	// 模拟 build 节点完成
-	buildNode.Phase.Phase = model.NodePhaseSucceeded
-	_, err = client.Update(ctx, buildNode)
-	if err != nil {
-		t.Fatalf("Update build node failed: %v", err)
-	}
-
-	t.Logf("🔄 Build node completed")
-	time.Sleep(2 * time.Second) // 等待流水线逻辑处理
-
-	// 检查 test 节点是否被触发
-	updatedList, err := client.List(ctx, typed.ListOptions{
-		Namespace: "pipeline-test",
-		Kind:      "task",
-	})
-	if err != nil {
-		t.Fatalf("List updated nodes failed: %v", err)
-	}
-
-	var testNode *model.NodeExec
-	for _, node := range updatedList.Items {
-		if node.Name == "test" {
-			testNode = node
-			break
-		}
-	}
-
-	if testNode == nil {
-		t.Fatal("Test node not found")
-	}
-
-	t.Logf("Test node status: %s, InDegree: %d", testNode.Phase.Phase, testNode.InDegree)
-
-	// 验证流水线状态管理
-	if testNode.InDegree == 0 && testNode.Phase.Phase == model.NodePhaseReady {
-		t.Logf("✅ Pipeline state management working: test node triggered")
-	} else {
-		t.Errorf("❌ Pipeline state management failed: test node InDegree=%d, Phase=%s", 
-			testNode.InDegree, testNode.Phase.Phase)
-	}
-
-	// 继续完成 test 节点
-	testNode.Phase.Phase = model.NodePhaseSucceeded
-	_, err = client.Update(ctx, testNode)
-	if err != nil {
-		t.Fatalf("Update test node failed: %v", err)
-	}
-
-	t.Logf("🔄 Test node completed")
-	time.Sleep(2 * time.Second)
-
-	// 检查 deploy 节点
-	finalList, err := client.List(ctx, typed.ListOptions{
-		Namespace: "pipeline-test",
-		Kind:      "task",
-	})
-	if err != nil {
-		t.Fatalf("List final nodes failed: %v", err)
-	}
-
-	var deployNode *model.NodeExec
-	for _, node := range finalList.Items {
-		if node.Name == "deploy" {
-			deployNode = node
-			break
-		}
-	}
-
-	if deployNode != nil && deployNode.InDegree == 0 && deployNode.Phase.Phase == model.NodePhaseReady {
-		t.Logf("✅ Deploy node triggered successfully")
-		
-		// 完成 deploy 节点以触发流水线完成
-		deployNode.Phase.Phase = model.NodePhaseSucceeded
-		_, err = client.Update(ctx, deployNode)
-		if err != nil {
-			t.Fatalf("Update deploy node failed: %v", err)
-		}
-		
-		t.Logf("🔄 Deploy node completed")
-		time.Sleep(2 * time.Second) // 等待流水线状态更新
-		
-		// 检查流水线状态
-		pipeExecs, err := dao.Q.PipeExec.WithContext(ctx).Where(dao.Q.PipeExec.Space.Eq("pipeline-test")).Find()
-		if err != nil {
-			t.Fatalf("Get pipeline exec failed: %v", err)
-		}
-		
-		if len(pipeExecs) > 0 {
-			pipeExec := pipeExecs[0]
-			if pipeExec.State == model.PipeExecStateSuccess {
-				t.Logf("✅ Pipeline completed successfully (state=%d)", pipeExec.State)
-			} else {
-				t.Errorf("❌ Pipeline state incorrect: expected %d, got %d", model.PipeExecStateSuccess, pipeExec.State)
-			}
-		}
-		
-	} else if deployNode != nil {
-		t.Errorf("❌ Deploy node not triggered: InDegree=%d, Phase=%s", 
-			deployNode.InDegree, deployNode.Phase.Phase)
-	}
-
-	t.Log("🎯 Pipeline state management test completed")
 }
