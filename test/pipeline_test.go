@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	client_pipe "github.com/yxxchange/pipefree/client_pipe"
+	"github.com/yxxchange/pipefree/client_pipe"
 	"github.com/yxxchange/pipefree/client_pipe/informers"
 	appconfig "github.com/yxxchange/pipefree/config"
 	server "github.com/yxxchange/pipefree/http"
